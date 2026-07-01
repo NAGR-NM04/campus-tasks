@@ -41,12 +41,10 @@ export default function App() {
   const [loading, setLoading] = useState<boolean>(true);
   const [apiError, setApiError] = useState<string | null>(null);
 
-  // サーバーの接続先ポート設定 (デフォルトはExpressで使用される3000、状況に応じて3001等に変更可能)
+  // サーバーの接続先ポート設定
   const [backendPort, setBackendPort] = useState<string>(() => {
     return localStorage.getItem("campus_tasks_backend_port") || "3000";
   });
-  const API_BASE_URL =
-    import.meta.env.VITE_API_BASE_URL || `http://localhost:${backendPort}`;
   const [showSettings, setShowSettings] = useState<boolean>(false);
 
   // 画面表示制御
@@ -56,7 +54,7 @@ export default function App() {
     "all" | "active" | "completed"
   >("all");
 
-  // カレンダー表示用の選択年月（2026年6月をデフォルト基準とする）
+  // カレンダー表示用の選択年月
   const [currentYear, setCurrentYear] = useState<number>(2026);
   const [currentMonth, setCurrentMonth] = useState<number>(5); // 0-indexed (5 = 6月)
 
@@ -75,7 +73,10 @@ export default function App() {
     memo: "",
   });
 
-  const API_BASE_URL = `http://localhost:${backendPort}`;
+  // 環境変数 VITE_API_BASE_URL が設定されていれば本番、なければローカルを参照
+  const API_BASE_URL =
+    (import.meta as any).env?.VITE_API_BASE_URL ||
+    `http://localhost:${backendPort}`;
 
   const fetchData = async () => {
     setLoading(true);
@@ -95,7 +96,7 @@ export default function App() {
     } catch (error: any) {
       console.error(error);
       setApiError(
-        `サーバー(ポート: ${backendPort})に接続できません。バックエンドサーバーが起動しているか確認してください。`,
+        `サーバーに接続できません。バックエンドサーバーが起動しているか確認してください。`,
       );
     } finally {
       setLoading(false);
@@ -238,7 +239,6 @@ export default function App() {
     }
   };
 
-  // カレンダー描画用ヘルパー関数
   const getDaysInMonth = (year: number, month: number) => {
     return new Date(year, month + 1, 0).getDate();
   };
@@ -252,7 +252,7 @@ export default function App() {
     const firstDay = getFirstDayOfMonth(currentYear, currentMonth);
     const cells = [];
 
-    // 空白のセル（前月の末尾部分）を埋める
+    // 空白のセル（前月の末尾部分）
     for (let i = 0; i < firstDay; i++) {
       cells.push(
         <div
@@ -262,9 +262,9 @@ export default function App() {
       );
     }
 
-    // 今月の日付セルを精密に生成
+    // 今月の日付セル
     for (let day = 1; day <= daysInMonth; day++) {
-      // 当日のタスクを100%正確にフィルタリングする（文字列切り出しミスを排し、年月日すべて一致が条件）
+      // 厳格な日付の一致確認
       const dayTasks = filteredTasks.filter((task) => {
         if (!task.dueDate) return false;
         const d = new Date(task.dueDate);
@@ -346,14 +346,13 @@ export default function App() {
         </div>
       </header>
 
-      {}
       <main className="max-w-5xl mx-auto px-4 py-8">
         {showSettings && (
           <div className="mb-6 p-4 bg-slate-100 border border-slate-200 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="text-sm text-slate-600">
               <strong>バックエンド接続ポート設定:</strong>
               <p className="text-xs mt-1">
-                Expressサーバーのポート番号を指定します。3001などで起動している場合は変更してください。
+                Expressサーバーのポート番号を指定します。ローカルポートが変更されている場合は調整してください。
               </p>
             </div>
             <div className="flex items-center gap-2 w-full sm:w-auto">
@@ -402,7 +401,6 @@ export default function App() {
           </div>
         )}
 
-        {}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
           {/* Class creation Form */}
           <section className="bg-white p-6 rounded-2xl shadow-xs border border-slate-200">
@@ -580,7 +578,6 @@ export default function App() {
           </section>
         </div>
 
-        {}
         <div className="bg-white rounded-2xl shadow-xs border border-slate-200 p-6">
           <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center mb-6 gap-4">
             <div className="flex flex-wrap items-center gap-3">
@@ -631,7 +628,6 @@ export default function App() {
             </div>
           </div>
 
-          {}
           {loading ? (
             <div className="text-center py-12 text-slate-500">
               <RefreshCw
