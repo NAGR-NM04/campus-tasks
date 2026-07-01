@@ -27,6 +27,31 @@ app.post("/api/classes", async (req, res) => {
   res.json(newClass);
 });
 
+// 課題を編集（更新）するAPI（修正版）
+app.put("/api/tasks/:id", async (req, res) => {
+  const { id } = req.params;
+  const { title, dueDate, estimatedTime, memo, classId } = req.body;
+
+  try {
+    const updatedTask = await prisma.task.update({
+      where: {
+        id: Number(id),
+      },
+      data: {
+        title: title, // ★ name: title から title: title に修正！
+        dueDate: new Date(dueDate),
+        estimatedTime: Number(estimatedTime),
+        memo: memo,
+        classId: Number(classId),
+      },
+    });
+    res.json(updatedTask);
+  } catch (error) {
+    console.error("Failed to update task:", error);
+    res.status(500).json({ error: "課題の更新に失敗しました。" });
+  }
+});
+
 // 3. すべての「課題」のデータを取得する窓口（紐づく授業データも一緒に持ってくる）
 app.get("/api/tasks", async (req, res) => {
   const tasks = await prisma.task.findMany({

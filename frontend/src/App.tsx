@@ -14,6 +14,7 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
+  Edit2,
 } from "lucide-react";
 
 interface ClassItem {
@@ -58,7 +59,7 @@ export default function App() {
   const [currentYear, setCurrentYear] = useState<number>(2026);
   const [currentMonth, setCurrentMonth] = useState<number>(5); // 0-indexed (5 = 6月)
 
-  // フォーム入力データ
+  // フォーム入力データ（新規作成用）
   const [newClass, setNewClass] = useState({
     name: "",
     year: 2026,
@@ -73,10 +74,31 @@ export default function App() {
     memo: "",
   });
 
-  // 環境変数 VITE_API_BASE_URL が設定されていれば本番、なければローカルを参照
-  const API_BASE_URL =
-    (import.meta as any).env?.VITE_API_BASE_URL ||
-    `http://localhost:${backendPort}`;
+  // 編集用のState
+  const [isEditModalOpen, setIsEditModalOpen] = useState<boolean>(false);
+  const [editingTask, setEditingTask] = useState<TaskItem | null>(null);
+  const [editTaskData, setEditTaskData] = useState({
+    classId: "",
+    title: "",
+    dueDate: "",
+    estimatedTime: 60,
+    memo: "",
+  });
+
+  // ES2015ターゲットビルド時の警告およびエラーを安全に回避するためのメタ環境変数読み込み
+  const getEnvUrl = (): string => {
+    try {
+      const metaObj = import.meta as any;
+      if (metaObj && metaObj.env && metaObj.env.VITE_API_BASE_URL) {
+        return metaObj.env.VITE_API_BASE_URL;
+      }
+    } catch (e) {
+      // フォールバック処理
+    }
+    return `http://localhost:${backendPort}`;
+  };
+
+  const API_BASE_URL = getEnvUrl();
 
   const fetchData = async () => {
     setLoading(true);
@@ -153,6 +175,59 @@ export default function App() {
         estimatedTime: 60,
         memo: "",
       });
+      fetchData();
+    } catch (error: any) {
+      console.error(error);
+    }
+  };
+
+  // 編集モードを起動し、初期値をフォームに詰める関数
+  const openEditModal = (task: TaskItem) => {
+    setEditingTask(task);
+
+    // 日付フォーマット調整 (YYYY-MM-DDTHH:MM形式にする)
+    const d = new Date(task.dueDate);
+    const localDateTime = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+      .toISOString()
+      .slice(0, 16);
+
+    setEditTaskData({
+      classId: task.classId.toString(),
+      title: task.title,
+      dueDate: localDateTime,
+      estimatedTime: task.estimatedTime,
+      memo: task.memo || "",
+    });
+    setIsEditModalOpen(true);
+  };
+
+  // 編集内容をサーバーへ保存する関数
+  const handleUpdateTask = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (
+      !editingTask ||
+      !editTaskData.classId ||
+      !editTaskData.title.trim() ||
+      !editTaskData.dueDate
+    )
+      return;
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/tasks/${editingTask.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          classId: parseInt(editTaskData.classId),
+          title: editTaskData.title,
+          dueDate: new Date(editTaskData.dueDate).toISOString(),
+          estimatedTime: editTaskData.estimatedTime,
+          memo: editTaskData.memo,
+        }),
+      });
+      if (!res.ok) throw new Error("課題の更新に失敗しました");
+
+      setIsEditModalOpen(false);
+      setEditingTask(null);
       fetchData();
     } catch (error: any) {
       console.error(error);
@@ -295,7 +370,7 @@ export default function App() {
                       : t.class?.color || "#3B82F6",
                   }}
                   title={`${t.title} (${t.class?.name || "授業"})`}
-                  onClick={() => toggleTaskCompletion(t.id, t.isCompleted)}
+                  onClick={() => openEditModal(t)}
                 >
                   {t.isCompleted && "✓ "}
                   {t.title}
@@ -320,7 +395,7 @@ export default function App() {
             </div>
             <h1 className="text-xl font-bold tracking-tight">CampusTasks</h1>
             <span className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded font-mono">
-              v1.2 (Active)
+              v1.3 (Editable)
             </span>
           </div>
 
@@ -346,6 +421,7 @@ export default function App() {
         </div>
       </header>
 
+      {}
       <main className="max-w-5xl mx-auto px-4 py-8">
         {showSettings && (
           <div className="mb-6 p-4 bg-slate-100 border border-slate-200 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-4">
@@ -578,6 +654,7 @@ export default function App() {
           </section>
         </div>
 
+        {}
         <div className="bg-white rounded-2xl shadow-xs border border-slate-200 p-6">
           <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center mb-6 gap-4">
             <div className="flex flex-wrap items-center gap-3">
@@ -628,6 +705,7 @@ export default function App() {
             </div>
           </div>
 
+          {}
           {loading ? (
             <div className="text-center py-12 text-slate-500">
               <RefreshCw
@@ -744,14 +822,23 @@ export default function App() {
                       </div>
                     )}
 
-                    {/* Delete button */}
-                    <button
-                      onClick={() => deleteTask(task.id)}
-                      className="text-slate-300 hover:text-red-500 p-1 rounded-md hover:bg-slate-50 transition-colors self-end sm:self-auto"
-                      title="削除"
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                    {/* Action buttons (Edit and Delete) */}
+                    <div className="flex items-center gap-2 self-end sm:self-auto">
+                      <button
+                        onClick={() => openEditModal(task)}
+                        className="text-slate-400 hover:text-blue-500 p-1.5 rounded-md hover:bg-slate-50 transition-colors"
+                        title="編集"
+                      >
+                        <Edit2 size={16} />
+                      </button>
+                      <button
+                        onClick={() => deleteTask(task.id)}
+                        className="text-slate-300 hover:text-red-500 p-1.5 rounded-md hover:bg-slate-50 transition-colors"
+                        title="削除"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -801,6 +888,136 @@ export default function App() {
           )}
         </div>
       </main>
+
+      {}
+      {/* 編集モーダルポップアップ */}
+      {isEditModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-6 border-b border-slate-100">
+              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <Edit2 size={18} className="text-blue-500" />
+                課題を編集する
+              </h3>
+            </div>
+
+            <form onSubmit={handleUpdateTask} className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-1">
+                  対象の授業
+                </label>
+                <select
+                  className="w-full border border-slate-200 p-2.5 rounded-lg bg-white"
+                  required
+                  value={editTaskData.classId}
+                  onChange={(e) =>
+                    setEditTaskData({
+                      ...editTaskData,
+                      classId: e.target.value,
+                    })
+                  }
+                >
+                  {classes.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-1">
+                  課題名
+                </label>
+                <input
+                  type="text"
+                  className="w-full border border-slate-200 p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                  required
+                  value={editTaskData.title}
+                  onChange={(e) =>
+                    setEditTaskData({ ...editTaskData, title: e.target.value })
+                  }
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-1">
+                    提出期日
+                  </label>
+                  <input
+                    type="datetime-local"
+                    className="w-full border border-slate-200 p-2 rounded-lg"
+                    required
+                    value={editTaskData.dueDate}
+                    onChange={(e) =>
+                      setEditTaskData({
+                        ...editTaskData,
+                        dueDate: e.target.value,
+                      })
+                    }
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-1">
+                    予想所要時間 (分)
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      className="w-full border border-slate-200 p-2 rounded-lg pr-8"
+                      required
+                      value={editTaskData.estimatedTime}
+                      onChange={(e) =>
+                        setEditTaskData({
+                          ...editTaskData,
+                          estimatedTime: Number(e.target.value),
+                        })
+                      }
+                    />
+                    <span className="absolute right-3 top-2.5 text-xs text-slate-400">
+                      分
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-1">
+                  メモ
+                </label>
+                <textarea
+                  className="w-full border border-slate-200 p-2 rounded-lg"
+                  rows={2}
+                  value={editTaskData.memo}
+                  onChange={(e) =>
+                    setEditTaskData({ ...editTaskData, memo: e.target.value })
+                  }
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsEditModalOpen(false);
+                    setEditingTask(null);
+                  }}
+                  className="px-4 py-2 text-sm font-bold text-slate-500 hover:bg-slate-100 rounded-lg transition-colors"
+                >
+                  キャンセル
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-xs"
+                >
+                  変更を保存
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
