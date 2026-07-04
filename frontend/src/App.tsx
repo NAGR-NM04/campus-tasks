@@ -143,7 +143,7 @@ export default function App() {
       typeof window !== "undefined" &&
       !window.location.hostname.includes("localhost")
     ) {
-      return "https://campus-tasks-backend-f6by.onrender.com";
+      return "https://campus-tasks-backend.onrender.com";
     }
 
     return `http://localhost:${backendPort}`;
