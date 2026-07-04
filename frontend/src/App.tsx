@@ -95,6 +95,16 @@ export default function App() {
     } catch (e) {
       // フォールバック処理
     }
+
+    // ▼ ここを修正！：もし環境変数がうまく読み込めなかった場合、強制的に本番URLを向くようにします
+    // ※ window.location.hostname に "localhost" が含まれていない＝本番環境のときは Render の URL を返す
+    if (
+      typeof window !== "undefined" &&
+      !window.location.hostname.includes("localhost")
+    ) {
+      return "https://campus-tasks-backend.onrender.com"; // ★RenderのバックエンドURL（末尾の/apiは無し）
+    }
+
     return `http://localhost:${backendPort}`;
   };
 
