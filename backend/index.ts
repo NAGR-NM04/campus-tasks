@@ -21,29 +21,43 @@ app.get("/api/classes", async (req, res) => {
 // 2. 新しい「授業」を登録する窓口
 app.post("/api/classes", async (req, res) => {
   const { name, year, semester, color } = req.body;
-  const newClass = await prisma.class.create({
-    data: { name, year, semester, color },
-  });
-  res.json(newClass);
+  try {
+    const newClass = await prisma.class.create({
+      data: {
+        name,
+        year: Number(year),
+        semester,
+        color,
+      },
+    });
+    res.json(newClass);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "授業の作成に失敗しました。" });
+  }
 });
 
 // 課題を編集（更新）するAPI（修正版）
 app.put("/api/tasks/:id", async (req, res) => {
   const { id } = req.params;
-  const { title, dueDate, estimatedTime, memo, classId } = req.body;
+  const { title, dueDate, estimatedTime, memo, classId, isCompleted } =
+    req.body;
 
   try {
+    const updateData: any = {};
+    if (title !== undefined) updateData.title = title;
+    if (dueDate !== undefined) updateData.dueDate = new Date(dueDate);
+    if (estimatedTime !== undefined)
+      updateData.estimatedTime = Number(estimatedTime);
+    if (memo !== undefined) updateData.memo = memo;
+    if (classId !== undefined) updateData.classId = Number(classId);
+    if (isCompleted !== undefined) updateData.isCompleted = isCompleted;
+
     const updatedTask = await prisma.task.update({
       where: {
         id: Number(id),
       },
-      data: {
-        title: title, // ★ name: title から title: title に修正！
-        dueDate: new Date(dueDate),
-        estimatedTime: Number(estimatedTime),
-        memo: memo,
-        classId: Number(classId),
-      },
+      data: updateData,
     });
     res.json(updatedTask);
   } catch (error) {
@@ -98,6 +112,45 @@ app.delete("/api/tasks/:id", async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "削除に失敗しました" });
+  }
+});
+
+// ==========================================
+// テンプレート（Template）関連のAPIを追加
+// ==========================================
+
+// テンプレート一覧を取得するAPI
+app.get("/api/templates", async (req, res) => {
+  try {
+    const templates = await prisma.template.findMany({
+      include: {
+        class: true, // 紐づく授業データも一緒に取得
+      },
+    });
+    res.json(templates);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "テンプレートの取得に失敗しました。" });
+  }
+});
+
+// テンプレートを新規登録するAPI
+app.post("/api/templates", async (req, res) => {
+  // フロントからは 'name' という名前で送られてくるので、それを受け取ります
+  const { name, estimatedTime, memo, classId } = req.body;
+  try {
+    const newTemplate = await prisma.template.create({
+      data: {
+        title: name, // ★ここを `name` から `title: name` に書き換えます！
+        estimatedTime: Number(estimatedTime),
+        memo: memo || "",
+        classId: Number(classId),
+      },
+    });
+    res.json(newTemplate);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "テンプレートの保存に失敗しました。" });
   }
 });
 
