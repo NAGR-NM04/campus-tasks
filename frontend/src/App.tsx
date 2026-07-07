@@ -16,9 +16,8 @@ import {
   ChevronRight,
   BookOpen,
   Clock,
-  Tag,
-  Palette,
   Copy,
+  Tag,
 } from "lucide-react";
 
 // 型定義
@@ -34,7 +33,7 @@ interface Task {
   id: number;
   title: string;
   dueDate: string;
-  estimatedTime: number; // 分単位で保存
+  estimatedTime: number; // 分単位
   memo: string;
   classId: number;
   class: ClassInfo;
@@ -43,11 +42,11 @@ interface Task {
 
 interface Template {
   id: number;
-  name: string;
-  estimatedTime: number;
+  title: string;
+  estimatedTime: number; // 分単位
   memo: string;
   classId: number;
-  class?: ClassInfo;
+  class: ClassInfo;
 }
 
 const backendPort = 3000;
@@ -58,7 +57,7 @@ const getOpacityByPriority = (priorityValue: number) => {
   return opacity;
 };
 
-// hexカラーをrgbaに変換するヘルパー関数
+// hexカラーをrgbaに変換するヘルパー
 const hexToRgba = (hex: string, opacity: number) => {
   const cleanHex = hex.replace("#", "");
   const r = parseInt(cleanHex.slice(0, 2), 16);
@@ -77,7 +76,7 @@ export default function App() {
   // 表示モード ('list' = リスト表示, 'calendar' = カレンダー表示)
   const [viewMode, setViewMode] = useState<"list" | "calendar">("list");
 
-  // 現在時刻（優先度算出の基準）
+  // 現在時刻（優先度算出の基準。1分ごとに更新）
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
 
   // カレンダー表示用の選択年月
@@ -88,32 +87,32 @@ export default function App() {
     new Date().getMonth(),
   );
 
-  // ソート基準
+  // ソート基準 ('dueDate' = 期日順, 'priority' = 優先度順)
   const [sortBy, setSortBy] = useState<"dueDate" | "priority">("dueDate");
 
-  // 統合登録用モーダルの状態
+  // 新規登録マルチモーダルの状態
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<"task" | "class" | "template">(
+  const [inputTab, setInputTab] = useState<"task" | "class" | "template">(
     "task",
   );
 
-  // 1. 新規課題用のフォーム状態
+  // 1. 課題登録フォームのState
   const [newTitle, setNewTitle] = useState("");
   const [newDueDate, setNewDueDate] = useState("");
   const [newEstimatedTime, setNewEstimatedTime] = useState(30);
   const [newMemo, setNewMemo] = useState("");
   const [newClassId, setNewClassId] = useState<number | "">("");
 
-  // 2. 新規授業用のフォーム状態
+  // 2. 授業登録フォームのState
   const [newClassName, setNewClassName] = useState("");
   const [newClassYear, setNewClassYear] = useState<number>(
     new Date().getFullYear(),
   );
   const [newClassSemester, setNewClassSemester] = useState("前期");
-  const [newClassColor, setNewClassColor] = useState("#4f46e5");
+  const [newClassColor, setNewClassColor] = useState("#3b82f6");
 
-  // 3. 新規テンプレート用のフォーム状態
-  const [newTemplateName, setNewTemplateName] = useState("");
+  // 3. テンプレート登録フォームのState
+  const [newTemplateTitle, setNewTemplateTitle] = useState("");
   const [newTemplateEstimatedTime, setNewTemplateEstimatedTime] = useState(30);
   const [newTemplateMemo, setNewTemplateMemo] = useState("");
   const [newTemplateClassId, setNewTemplateClassId] = useState<number | "">("");
@@ -143,7 +142,7 @@ export default function App() {
       typeof window !== "undefined" &&
       !window.location.hostname.includes("localhost")
     ) {
-      return "https://campus-tasks-backend.onrender.com";
+      return "https://campus-tasks-backend.onrender.com"; // ★あなたの本物のURL
     }
 
     return `http://localhost:${backendPort}`;
@@ -151,7 +150,7 @@ export default function App() {
 
   const API_BASE_URL = getEnvUrl();
 
-  // 現在時刻を1分ごとに更新
+  // 現在時刻を1分ごとに更新（優先度のリアルタイム更新のため）
   useEffect(() => {
     const timer = setInterval(() => {
       setCurrentTime(new Date());
@@ -159,7 +158,7 @@ export default function App() {
     return () => clearInterval(timer);
   }, []);
 
-  // 初期データ取得 (エラーハンドリングを強化し、テンプレートAPIがなくてもクラッシュしないようにする)
+  // 初期データ取得
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -171,13 +170,13 @@ export default function App() {
         setClasses(classesRes.data);
         setTasks(tasksRes.data);
 
-        // テンプレートデータの取得（なければ空配列で安全にフォールバック）
+        // テンプレート取得（バックエンドの準備状況に備えてフォールバックを施す）
         try {
           const templatesRes = await axios.get(`${API_BASE_URL}/api/templates`);
           setTemplates(templatesRes.data);
-        } catch (e) {
-          console.log(
-            "Templates API not registered yet. Falling back to local state.",
+        } catch (templateErr) {
+          console.warn(
+            "Templates API not available yet, initialized with empty list.",
           );
           setTemplates([]);
         }
@@ -195,7 +194,21 @@ export default function App() {
     fetchData();
   }, [API_BASE_URL]);
 
-  // 課題の登録処理
+  // 【新規機能】テンプレートを選択した際の自動入力（呼び出し）処理
+  const handleApplyTemplate = (templateIdStr: string) => {
+    if (!templateIdStr) return;
+    const templateId = Number(templateIdStr);
+    const selected = templates.find((t) => t.id === templateId);
+
+    if (selected) {
+      setNewTitle(selected.title);
+      setNewEstimatedTime(selected.estimatedTime);
+      setNewMemo(selected.memo || "");
+      setNewClassId(selected.classId);
+    }
+  };
+
+  // 新規課題の登録処理
   const handleAddTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim() || !newDueDate || !newClassId) return;
@@ -229,10 +242,10 @@ export default function App() {
     }
   };
 
-  // 授業の登録処理
+  // 授業の新規登録処理
   const handleAddClass = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newClassName.trim()) return;
+    if (!newClassName.trim() || !newClassYear) return;
 
     try {
       const response = await axios.post(`${API_BASE_URL}/api/classes`, {
@@ -242,29 +255,29 @@ export default function App() {
         color: newClassColor,
       });
 
+      // 登録した授業をリストに反映
       setClasses([...classes, response.data]);
-      alert(`「${newClassName}」を新しく登録しました！`);
 
-      // 登録完了後に課題タブへ戻し、追加した授業を選択状態にする
-      setNewClassId(response.data.id);
+      // 入力欄をクリアして、登録した授業が即座に選べるように課題タブへ切り替える
       setNewClassName("");
-      setActiveTab("task");
+      setNewClassColor("#3b82f6");
+      setNewClassId(response.data.id); // 登録した授業をセレクトボックスの選択状態にする
+      setInputTab("task");
+      alert("授業を新しく登録しました！");
     } catch (err) {
       console.error("Add class error:", err);
-      alert(
-        "授業の登録に失敗しました。バックエンドのAPI実装状況を確認してください。",
-      );
+      alert("授業の登録に失敗しました。");
     }
   };
 
-  // テンプレートの登録処理
+  // テンプレートの新規登録処理
   const handleAddTemplate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTemplateName.trim() || !newTemplateClassId) return;
+    if (!newTemplateTitle.trim() || !newTemplateClassId) return;
 
     try {
       const response = await axios.post(`${API_BASE_URL}/api/templates`, {
-        name: newTemplateName,
+        name: newTemplateTitle, // データベースの title に詰め替えられるよう name で送信
         estimatedTime: Number(newTemplateEstimatedTime),
         memo: newTemplateMemo,
         classId: Number(newTemplateClassId),
@@ -272,50 +285,22 @@ export default function App() {
 
       const createdTemplate = {
         ...response.data,
+        title: response.data.title || newTemplateTitle,
         class: classes.find((c) => c.id === Number(newTemplateClassId))!,
       };
 
       setTemplates([...templates, createdTemplate]);
-      alert(`テンプレート「${newTemplateName}」を保存しました！`);
 
-      // 入力フォームリセット
-      setNewTemplateName("");
+      // 登録完了後に初期化し、課題作成タブで即呼び出せるようにする
+      setNewTemplateTitle("");
       setNewTemplateEstimatedTime(30);
       setNewTemplateMemo("");
       setNewTemplateClassId("");
-      setActiveTab("task");
+      setInputTab("task");
+      alert("頻出課題テンプレートを保存しました！");
     } catch (err) {
       console.error("Add template error:", err);
-      // ローカルのメモリ上だけでも動作するように仮追加
-      const mockId = Date.now();
-      const mockTemplate: Template = {
-        id: mockId,
-        name: newTemplateName,
-        estimatedTime: Number(newTemplateEstimatedTime),
-        memo: newTemplateMemo,
-        classId: Number(newTemplateClassId),
-        class: classes.find((c) => c.id === Number(newTemplateClassId))!,
-      };
-      setTemplates([...templates, mockTemplate]);
-      alert(
-        `(ローカル保存) テンプレート「${newTemplateName}」を一覧に一時保存しました！`,
-      );
-      setNewTemplateName("");
-      setNewTemplateEstimatedTime(30);
-      setNewTemplateMemo("");
-      setNewTemplateClassId("");
-      setActiveTab("task");
-    }
-  };
-
-  // テンプレートを課題入力欄に適用する処理
-  const handleApplyTemplate = (templateId: number) => {
-    const selected = templates.find((t) => t.id === templateId);
-    if (selected) {
-      setNewTitle(selected.name);
-      setNewEstimatedTime(selected.estimatedTime);
-      setNewMemo(selected.memo || "");
-      setNewClassId(selected.classId);
+      alert("テンプレートの登録に失敗しました。");
     }
   };
 
@@ -419,20 +404,21 @@ export default function App() {
     }
   };
 
-  // 優先度の自動算出
+  // 【最重要ロジック】優先度の自動算出
+  // 式: 想定作業時間（時間単位） ÷ 期日までの残り時間（時間単位）
   const calculatePriority = (
     estimatedTimeMinutes: number,
     dueDateStr: string,
   ) => {
     const dueDate = new Date(dueDateStr);
     const diffMs = dueDate.getTime() - currentTime.getTime();
-    const diffHours = diffMs / (1000 * 60 * 60);
+    const diffHours = diffMs / (1000 * 60 * 60); // ミリ秒を時間に変換
 
     if (diffHours <= 0) {
-      return { value: 99.9, isOverdue: true };
+      return { value: 99.9, isOverdue: true }; // すでに期日を過ぎている場合
     }
 
-    const estimatedHours = estimatedTimeMinutes / 60;
+    const estimatedHours = estimatedTimeMinutes / 60; // 分を時間に変換
     const priority = estimatedHours / diffHours;
     return { value: Number(priority.toFixed(2)), isOverdue: false };
   };
@@ -442,6 +428,7 @@ export default function App() {
     const activeTasks = tasks.filter((t) => !t.isCompleted);
     const completedTasks = tasks.filter((t) => t.isCompleted);
 
+    // 未完了タスクに対してソートをかける
     const sortLogic = (a: Task, b: Task) => {
       if (sortBy === "dueDate") {
         return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
@@ -481,14 +468,14 @@ export default function App() {
     }
   };
 
-  // --- カレンダービューのレンダリング ---
+  // --- カレンダービューのレンダリング関数 ---
   const renderCalendarView = () => {
-    const firstDay = new Date(calendarYear, calendarMonth, 1).getDay();
-    const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
+    const firstDay = new Date(calendarYear, calendarMonth, 1).getDay(); // 月の最初の曜日
+    const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate(); // 月の日数
 
     const days: (number | null)[] = [];
-    for (let i = 0; i < firstDay; i++) days.push(null);
-    for (let i = 1; i <= daysInMonth; i++) days.push(i);
+    for (let i = 0; i < firstDay; i++) days.push(null); // 前月の空枠
+    for (let i = 1; i <= daysInMonth; i++) days.push(i); // 今月の日付
 
     return (
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm animate-in fade-in duration-200">
@@ -513,7 +500,7 @@ export default function App() {
           </div>
           <span className="text-xs text-slate-500 font-semibold flex items-center gap-1.5 bg-indigo-50 border border-indigo-100 px-3 py-1.5 rounded-full">
             <span className="w-2 h-2 rounded-full bg-indigo-500 shrink-0" />※
-            優先度が高いほど自動的に色が濃くなります
+            優先度（着手ストレス）が高いほど自動的に色が濃くなります
           </span>
         </div>
 
@@ -544,6 +531,7 @@ export default function App() {
               );
             }
 
+            // この日に期日を迎える課題をすべて取得
             const dayTasks = tasks.filter((t) => {
               const d = new Date(t.dueDate);
               return (
@@ -553,6 +541,7 @@ export default function App() {
               );
             });
 
+            // 本日判定
             const isToday =
               day === new Date().getDate() &&
               calendarMonth === new Date().getMonth() &&
@@ -565,6 +554,7 @@ export default function App() {
                   isToday ? "bg-indigo-50/30 ring-1 ring-indigo-500/20" : ""
                 }`}
               >
+                {/* 日付ラベル */}
                 <div className="flex justify-between items-center mb-1">
                   <span
                     className={`text-xs font-black p-1 w-6 h-6 rounded-lg flex items-center justify-center ${
@@ -582,6 +572,7 @@ export default function App() {
                   )}
                 </div>
 
+                {/* 課題のミニバッジリスト */}
                 <div className="mt-1 space-y-1.5 flex-1 overflow-y-auto max-h-[85px] custom-scrollbar">
                   {dayTasks.map((t) => {
                     const priorityInfo = calculatePriority(
@@ -647,7 +638,7 @@ export default function App() {
 
           <button
             onClick={() => {
-              setActiveTab("task");
+              setInputTab("task");
               setIsAddModalOpen(true);
             }}
             className="flex items-center space-x-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-4 py-2 rounded-xl transition duration-200 shadow-md shadow-indigo-100"
@@ -678,6 +669,7 @@ export default function App() {
           <div className="space-y-8">
             {/* ビュー切り替え＆操作パネル */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+              {/* 表示モードスイッチ */}
               <div className="flex bg-slate-200/80 p-1 rounded-2xl shadow-inner shrink-0">
                 <button
                   onClick={() => setViewMode("list")}
@@ -734,7 +726,7 @@ export default function App() {
               )}
             </div>
 
-            {/* メインビュー切り替え */}
+            {/* メイン切り替え部分 */}
             {viewMode === "calendar" ? (
               renderCalendarView()
             ) : (
@@ -756,7 +748,7 @@ export default function App() {
                       </p>
                       <button
                         onClick={() => {
-                          setActiveTab("task");
+                          setInputTab("task");
                           setIsAddModalOpen(true);
                         }}
                         className="mt-3 text-sm font-semibold text-indigo-600 hover:text-indigo-800"
@@ -973,95 +965,71 @@ export default function App() {
         )}
       </main>
 
-      {/* 🛠️ 新規登録用マルチタブモーダル (課題 / 授業 / テンプレート) */}
+      {/* 🚀 新規登録マルチモーダル (課題・授業・テンプレートの統合登録システム) */}
       {isAddModalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl w-full max-w-md shadow-xl border border-slate-100 overflow-hidden animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-[90vh]">
-            {/* モーダルヘッダー & タブ切り替え */}
-            <div className="border-b border-slate-100 bg-slate-50/50">
+            {/* ヘッダー・タブ切り替え */}
+            <div className="border-b border-slate-100 bg-slate-50 flex flex-col">
               <div className="flex items-center justify-between px-6 pt-4 pb-2">
-                <h3 className="font-bold text-slate-800">新規登録・作成</h3>
+                <h3 className="font-black text-slate-800 text-base">
+                  CampusTasks 新規登録
+                </h3>
                 <button
                   onClick={() => setIsAddModalOpen(false)}
-                  className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition"
+                  className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-200/50 transition"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
-              {/* タブ一覧 */}
-              <div className="flex px-4 border-b border-slate-200">
-                <button
-                  onClick={() => setActiveTab("task")}
-                  className={`flex-1 py-2 text-xs font-black border-b-2 transition duration-200 ${
-                    activeTab === "task"
-                      ? "border-indigo-600 text-indigo-600"
-                      : "border-transparent text-slate-500 hover:text-slate-800"
-                  }`}
-                >
-                  <span className="flex items-center justify-center gap-1.5">
-                    <CalendarIcon className="w-3.5 h-3.5" />
-                    課題を登録
-                  </span>
-                </button>
-                <button
-                  onClick={() => setActiveTab("class")}
-                  className={`flex-1 py-2 text-xs font-black border-b-2 transition duration-200 ${
-                    activeTab === "class"
-                      ? "border-indigo-600 text-indigo-600"
-                      : "border-transparent text-slate-500 hover:text-slate-800"
-                  }`}
-                >
-                  <span className="flex items-center justify-center gap-1.5">
-                    <Palette className="w-3.5 h-3.5" />
-                    授業を登録
-                  </span>
-                </button>
-                <button
-                  onClick={() => setActiveTab("template")}
-                  className={`flex-1 py-2 text-xs font-black border-b-2 transition duration-200 ${
-                    activeTab === "template"
-                      ? "border-indigo-600 text-indigo-600"
-                      : "border-transparent text-slate-500 hover:text-slate-800"
-                  }`}
-                >
-                  <span className="flex items-center justify-center gap-1.5">
-                    <Copy className="w-3.5 h-3.5" />
-                    テンプレート
-                  </span>
-                </button>
+              <div className="flex border-t border-slate-200">
+                {(["task", "class", "template"] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => setInputTab(tab)}
+                    className={`flex-1 py-3 text-xs font-bold text-center border-b-2 transition-colors duration-150 ${
+                      inputTab === tab
+                        ? "border-indigo-600 text-indigo-600 bg-white"
+                        : "border-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                    }`}
+                  >
+                    {tab === "task" && "課題を登録"}
+                    {tab === "class" && "授業を登録"}
+                    {tab === "template" && "テンプレート"}
+                  </button>
+                ))}
               </div>
             </div>
 
-            {/* モーダルコンテンツ (スクロール対応) */}
-            <div className="p-6 overflow-y-auto max-h-[65vh] custom-scrollbar">
-              {/* TAB 1: 課題の登録 */}
-              {activeTab === "task" && (
+            {/* 各種フォームコンテンツ */}
+            <div className="p-6 overflow-y-auto flex-1 custom-scrollbar">
+              {/* 1. 課題追加フォーム */}
+              {inputTab === "task" && (
                 <form onSubmit={handleAddTask} className="space-y-4">
-                  {/* テンプレートから呼び出しUI */}
+                  {/* 【新機能】テンプレート呼び出し用ドロップダウン */}
                   {templates.length > 0 && (
-                    <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-3">
-                      <label className="block text-[11px] font-bold text-indigo-700 uppercase mb-1.5 flex items-center gap-1">
-                        <Copy className="w-3 h-3" />
-                        登録済みのテンプレートから自動入力
+                    <div className="bg-indigo-50/50 border border-indigo-100 rounded-xl p-3">
+                      <label className="block text-[10px] font-black text-indigo-600 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>テンプレートから呼び出す（自動入力）</span>
                       </label>
                       <div className="relative">
                         <select
-                          onChange={(e) => {
-                            if (e.target.value)
-                              handleApplyTemplate(Number(e.target.value));
-                          }}
+                          onChange={(e) => handleApplyTemplate(e.target.value)}
                           defaultValue=""
-                          className="w-full bg-white border border-indigo-200 rounded-lg px-2.5 py-1.5 text-xs font-medium focus:ring-2 focus:ring-indigo-500 transition outline-none appearance-none cursor-pointer"
+                          className="w-full bg-white border border-indigo-200 rounded-lg px-2.5 py-1.5 text-xs font-semibold focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none appearance-none cursor-pointer text-slate-700"
                         >
-                          <option value="">テンプレートを選択...</option>
+                          <option value="">-- 保存されたひな形を選択 --</option>
                           {templates.map((t) => (
                             <option key={t.id} value={t.id}>
-                              {t.name} ({t.class?.name || "授業あり"})
+                              [{t.class?.name || "共通"}] {t.title} (
+                              {t.estimatedTime}分)
                             </option>
                           ))}
                         </select>
-                        <ChevronDown className="w-3.5 h-3.5 text-indigo-400 absolute right-2.5 top-2.5 pointer-events-none" />
+                        <ChevronDown className="w-3.5 h-3.5 text-indigo-500 absolute right-2.5 top-2.5 pointer-events-none" />
                       </div>
                     </div>
                   )}
@@ -1086,14 +1054,6 @@ export default function App() {
                       </select>
                       <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3.5 top-3.5 pointer-events-none" />
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab("class")}
-                      className="mt-1.5 text-[11px] font-bold text-indigo-600 hover:text-indigo-800 transition flex items-center gap-1"
-                    >
-                      <Plus className="w-3 h-3" />
-                      新しい授業を先に登録する
-                    </button>
                   </div>
 
                   <div>
@@ -1172,16 +1132,16 @@ export default function App() {
                 </form>
               )}
 
-              {/* TAB 2: 授業の登録 */}
-              {activeTab === "class" && (
+              {/* 2. 授業登録フォーム */}
+              {inputTab === "class" && (
                 <form onSubmit={handleAddClass} className="space-y-4">
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                      授業の名前
+                      授業名
                     </label>
                     <input
                       type="text"
-                      placeholder="例: ソフトウェア工学"
+                      placeholder="例: データベース論"
                       value={newClassName}
                       onChange={(e) => setNewClassName(e.target.value)}
                       className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-medium placeholder:text-slate-400 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition outline-none"
@@ -1192,7 +1152,7 @@ export default function App() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                        年度
+                        開講年度
                       </label>
                       <input
                         type="number"
@@ -1207,7 +1167,7 @@ export default function App() {
 
                     <div>
                       <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                        学期
+                        開講学期
                       </label>
                       <div className="relative">
                         <select
@@ -1217,10 +1177,6 @@ export default function App() {
                         >
                           <option value="前期">前期</option>
                           <option value="後期">後期</option>
-                          <option value="第1クォーター">第1Q</option>
-                          <option value="第2クォーター">第2Q</option>
-                          <option value="第3クォーター">第3Q</option>
-                          <option value="第4クォーター">第4Q</option>
                           <option value="通年">通年</option>
                         </select>
                         <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3.5 top-3.5 pointer-events-none" />
@@ -1228,51 +1184,43 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* テーマカラー選択 */}
                   <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
                       テーマカラー
                     </label>
-                    <div className="flex flex-wrap gap-2.5">
+                    <div className="flex flex-wrap gap-2.5 p-3 bg-slate-50 rounded-xl border border-slate-200">
                       {[
-                        "#4f46e5", // Indigo
-                        "#3b82f6", // Blue
-                        "#06b6d4", // Cyan
-                        "#10b981", // Green
-                        "#f59e0b", // Amber
-                        "#f97316", // Orange
-                        "#ef4444", // Red
-                        "#ec4899", // Pink
-                        "#8b5cf6", // Purple
+                        "#ef4444",
+                        "#f97316",
+                        "#eab308",
+                        "#10b981",
+                        "#3b82f6",
+                        "#8b5cf6",
+                        "#ec4899",
+                        "#64748b",
                       ].map((color) => (
                         <button
                           key={color}
                           type="button"
                           onClick={() => setNewClassColor(color)}
-                          className={`w-8 h-8 rounded-full border-2 transition duration-150 relative flex items-center justify-center shrink-0 shadow-sm`}
-                          style={{
-                            backgroundColor: color,
-                            borderColor:
-                              newClassColor === color
-                                ? "#1e293b"
-                                : "transparent",
-                          }}
-                        >
-                          {newClassColor === color && (
-                            <div className="w-2 h-2 rounded-full bg-white shadow-md" />
-                          )}
-                        </button>
+                          className={`w-8 h-8 rounded-full border-2 transition-all transform hover:scale-105 active:scale-95 ${
+                            newClassColor === color
+                              ? "border-slate-800 scale-110 shadow-md shadow-slate-300"
+                              : "border-transparent"
+                          }`}
+                          style={{ backgroundColor: color }}
+                        />
                       ))}
                     </div>
                   </div>
 
-                  <div className="flex items-center space-x-3 pt-4">
+                  <div className="flex items-center space-x-3 pt-2">
                     <button
                       type="button"
-                      onClick={() => setActiveTab("task")}
+                      onClick={() => setIsAddModalOpen(false)}
                       className="w-1/2 border border-slate-200 hover:bg-slate-50 text-slate-500 font-bold py-2.5 rounded-xl text-sm transition"
                     >
-                      戻る
+                      キャンセル
                     </button>
                     <button
                       type="submit"
@@ -1284,12 +1232,12 @@ export default function App() {
                 </form>
               )}
 
-              {/* TAB 3: テンプレートの登録 */}
-              {activeTab === "template" && (
+              {/* 3. テンプレート登録フォーム */}
+              {inputTab === "template" && (
                 <form onSubmit={handleAddTemplate} className="space-y-4">
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                      対象の授業
+                      対象の授業を選択
                     </label>
                     <div className="relative">
                       <select
@@ -1300,7 +1248,7 @@ export default function App() {
                         className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-medium focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition outline-none appearance-none cursor-pointer"
                         required
                       >
-                        <option value="">授業を選んでください</option>
+                        <option value="">授業を選択してください</option>
                         {classes.map((cls) => (
                           <option key={cls.id} value={cls.id}>
                             {cls.name}
@@ -1313,13 +1261,13 @@ export default function App() {
 
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                      テンプレートの名前（課題名）
+                      頻出課題のタイトル
                     </label>
                     <input
                       type="text"
-                      placeholder="例: 毎週のミニレポート"
-                      value={newTemplateName}
-                      onChange={(e) => setNewTemplateName(e.target.value)}
+                      placeholder="例: 【毎週】演習レポート提出"
+                      value={newTemplateTitle}
+                      onChange={(e) => setNewTemplateTitle(e.target.value)}
                       className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-medium placeholder:text-slate-400 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition outline-none"
                       required
                     />
@@ -1327,11 +1275,12 @@ export default function App() {
 
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                      想定所要時間 (分)
+                      想定される時間 (分)
                     </label>
                     <input
                       type="number"
                       min="1"
+                      placeholder="60"
                       value={newTemplateEstimatedTime}
                       onChange={(e) =>
                         setNewTemplateEstimatedTime(Number(e.target.value))
@@ -1343,23 +1292,23 @@ export default function App() {
 
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                      メモ (任意)
+                      固定メモ (任意)
                     </label>
                     <textarea
-                      placeholder="例: PDFで提出。Gitにプッシュ。"
+                      placeholder="例: 指定のリポジトリにpushすること"
                       value={newTemplateMemo}
                       onChange={(e) => setNewTemplateMemo(e.target.value)}
                       className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-medium placeholder:text-slate-400 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition outline-none h-20 resize-none"
                     />
                   </div>
 
-                  <div className="flex items-center space-x-3 pt-4">
+                  <div className="flex items-center space-x-3 pt-2">
                     <button
                       type="button"
-                      onClick={() => setActiveTab("task")}
+                      onClick={() => setIsAddModalOpen(false)}
                       className="w-1/2 border border-slate-200 hover:bg-slate-50 text-slate-500 font-bold py-2.5 rounded-xl text-sm transition"
                     >
-                      戻る
+                      キャンセル
                     </button>
                     <button
                       type="submit"
