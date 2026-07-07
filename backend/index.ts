@@ -18,7 +18,10 @@ app.get("/api/classes", async (req, res) => {
   res.json(classes);
 });
 
-// 2. 新しい「授業」を登録する窓口
+// ==========================================
+// 授業（Class）関連の 編集・削除 API
+// ==========================================
+
 app.post("/api/classes", async (req, res) => {
   const { name, year, semester, color } = req.body;
   try {
@@ -34,6 +37,55 @@ app.post("/api/classes", async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "授業の作成に失敗しました。" });
+  }
+});
+
+// 授業を編集・更新するAPI
+app.put("/api/classes/:id", async (req, res) => {
+  const { id } = req.params;
+  const { name, year, semester, color } = req.body;
+  try {
+    const updatedClass = await prisma.class.update({
+      where: { id: Number(id) },
+      data: {
+        name,
+        year: Number(year),
+        semester,
+        color,
+      },
+    });
+    res.json(updatedClass);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "授業の更新に失敗しました。" });
+  }
+});
+
+// 授業を削除するAPI (※ cascade onDelete 的に、紐づく課題やテンプレートも一気に削除します)
+app.delete("/api/classes/:id", async (req, res) => {
+  const { id } = req.params;
+  try {
+    const classIdNum = Number(id);
+
+    // 1. 紐づく課題 (Assignment) を一斉削除
+    await prisma.task.deleteMany({
+      where: { classId: classIdNum },
+    });
+
+    // 2. 紐づくテンプレート (Template) を一斉削除
+    await prisma.template.deleteMany({
+      where: { classId: classIdNum },
+    });
+
+    // 3. 最後に授業 (Class) 本体を削除します
+    const deletedClass = await prisma.class.delete({
+      where: { id: classIdNum },
+    });
+
+    res.json(deletedClass);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "授業の削除に失敗しました。" });
   }
 });
 
@@ -151,6 +203,41 @@ app.post("/api/templates", async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "テンプレートの保存に失敗しました。" });
+  }
+});
+
+// テンプレートを編集・更新するAPI
+app.put("/api/templates/:id", async (req, res) => {
+  const { id } = req.params;
+  const { name, estimatedTime, memo, classId } = req.body; // フロントからは `name` として届きます
+  try {
+    const updatedTemplate = await prisma.template.update({
+      where: { id: Number(id) },
+      data: {
+        title: name, // データベーススキーマのカラム `title` に詰め替えて保存します
+        estimatedTime: Number(estimatedTime),
+        memo: memo || "",
+        classId: Number(classId),
+      },
+    });
+    res.json(updatedTemplate);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "テンプレートの更新に失敗しました。" });
+  }
+});
+
+// テンプレートを削除するAPI
+app.delete("/api/templates/:id", async (req, res) => {
+  const { id } = req.params;
+  try {
+    const deletedTemplate = await prisma.template.delete({
+      where: { id: Number(id) },
+    });
+    res.json(deletedTemplate);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "テンプレートの削除に失敗しました。" });
   }
 });
 

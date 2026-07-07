@@ -18,6 +18,7 @@ import {
   Clock,
   Copy,
   Tag,
+  Settings,
 } from "lucide-react";
 
 // 型定義
@@ -103,21 +104,25 @@ export default function App() {
   const [newMemo, setNewMemo] = useState("");
   const [newClassId, setNewClassId] = useState<number | "">("");
 
-  // 2. 授業登録フォームのState
+  // 2. 授業登録・編集用のState
   const [newClassName, setNewClassName] = useState("");
   const [newClassYear, setNewClassYear] = useState<number>(
     new Date().getFullYear(),
   );
   const [newClassSemester, setNewClassSemester] = useState("前期");
   const [newClassColor, setNewClassColor] = useState("#3b82f6");
+  const [editingClassId, setEditingClassId] = useState<number | null>(null); // 編集中の授業ID
 
-  // 3. テンプレート登録フォームのState
+  // 3. テンプレート登録・編集用のState
   const [newTemplateTitle, setNewTemplateTitle] = useState("");
   const [newTemplateEstimatedTime, setNewTemplateEstimatedTime] = useState(30);
   const [newTemplateMemo, setNewTemplateMemo] = useState("");
   const [newTemplateClassId, setNewTemplateClassId] = useState<number | "">("");
+  const [editingTemplateId, setEditingTemplateId] = useState<number | null>(
+    null,
+  ); // 編集中のテンプレートID
 
-  // 編集用モーダル・フォームの状態
+  // 課題編集用モーダル・フォームの状態
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [editTaskData, setEditTaskData] = useState<{
     title: string;
@@ -142,7 +147,7 @@ export default function App() {
       typeof window !== "undefined" &&
       !window.location.hostname.includes("localhost")
     ) {
-      return "https://campus-tasks-backend.onrender.com"; // ★あなたの本物のURL
+      return "https://campus-tasks-backend.onrender.com";
     }
 
     return `http://localhost:${backendPort}`;
@@ -150,7 +155,7 @@ export default function App() {
 
   const API_BASE_URL = getEnvUrl();
 
-  // 現在時刻を1分ごとに更新（優先度のリアルタイム更新のため）
+  // 現在時刻を1分ごとに更新
   useEffect(() => {
     const timer = setInterval(() => {
       setCurrentTime(new Date());
@@ -159,42 +164,40 @@ export default function App() {
   }, []);
 
   // 初期データ取得
-  useEffect(() => {
-    const fetchData = async () => {
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      const [classesRes, tasksRes] = await Promise.all([
+        axios.get(`${API_BASE_URL}/api/classes`),
+        axios.get(`${API_BASE_URL}/api/tasks`),
+      ]);
+      setClasses(classesRes.data);
+      setTasks(tasksRes.data);
+
       try {
-        setLoading(true);
-        const [classesRes, tasksRes] = await Promise.all([
-          axios.get(`${API_BASE_URL}/api/classes`),
-          axios.get(`${API_BASE_URL}/api/tasks`),
-        ]);
-        setClasses(classesRes.data);
-        setTasks(tasksRes.data);
-
-        // テンプレート取得（バックエンドの準備状況に備えてフォールバックを施す）
-        try {
-          const templatesRes = await axios.get(`${API_BASE_URL}/api/templates`);
-          setTemplates(templatesRes.data);
-        } catch (templateErr) {
-          console.warn(
-            "Templates API not available yet, initialized with empty list.",
-          );
-          setTemplates([]);
-        }
-
-        setError(null);
-      } catch (err) {
-        console.error("Fetch error:", err);
-        setError(
-          "サーバーに接続できません。バックエンドサーバーが起動しているか確認してください。",
-        );
-      } finally {
-        setLoading(false);
+        const templatesRes = await axios.get(`${API_BASE_URL}/api/templates`);
+        setTemplates(templatesRes.data);
+      } catch (templateErr) {
+        console.warn("Templates API not available yet.");
+        setTemplates([]);
       }
-    };
+
+      setError(null);
+    } catch (err) {
+      console.error("Fetch error:", err);
+      setError(
+        "サーバーに接続できません。バックエンドサーバーが起動しているか確認してください。",
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchData();
   }, [API_BASE_URL]);
 
-  // 【新規機能】テンプレートを選択した際の自動入力（呼び出し）処理
+  // テンプレート呼び出し（自動入力）処理
   const handleApplyTemplate = (templateIdStr: string) => {
     if (!templateIdStr) return;
     const templateId = Number(templateIdStr);
@@ -208,7 +211,7 @@ export default function App() {
     }
   };
 
-  // 新規課題の登録処理
+  // 1-A. 新規課題の登録処理
   const handleAddTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim() || !newDueDate || !newClassId) return;
@@ -230,7 +233,7 @@ export default function App() {
       setTasks([...tasks, createdTask]);
       setIsAddModalOpen(false);
 
-      // フォームの初期化
+      // フォーム初期化
       setNewTitle("");
       setNewDueDate("");
       setNewEstimatedTime(30);
@@ -242,72 +245,221 @@ export default function App() {
     }
   };
 
-  // 授業の新規登録処理
-  const handleAddClass = async (e: React.FormEvent) => {
+  // 2-A. 授業の新規登録・編集の送信処理
+  const handleSaveClass = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newClassName.trim() || !newClassYear) return;
 
     try {
-      const response = await axios.post(`${API_BASE_URL}/api/classes`, {
-        name: newClassName,
-        year: Number(newClassYear),
-        semester: newClassSemester,
-        color: newClassColor,
-      });
+      if (editingClassId !== null) {
+        // 【編集モード】
+        await axios.put(`${API_BASE_URL}/api/classes/${editingClassId}`, {
+          name: newClassName,
+          year: Number(newClassYear),
+          semester: newClassSemester,
+          color: newClassColor,
+        });
 
-      // 登録した授業をリストに反映
-      setClasses([...classes, response.data]);
+        // 授業一覧の State を更新
+        setClasses(
+          classes.map((c) =>
+            c.id === editingClassId
+              ? {
+                  ...c,
+                  name: newClassName,
+                  year: Number(newClassYear),
+                  semester: newClassSemester,
+                  color: newClassColor,
+                }
+              : c,
+          ),
+        );
 
-      // 入力欄をクリアして、登録した授業が即座に選べるように課題タブへ切り替える
+        // 現在表示されているタスク側の授業オブジェクトもすべて更新して連動させる
+        setTasks(
+          tasks.map((t) =>
+            t.classId === editingClassId
+              ? {
+                  ...t,
+                  class: {
+                    ...t.class,
+                    name: newClassName,
+                    color: newClassColor,
+                  },
+                }
+              : t,
+          ),
+        );
+
+        setEditingClassId(null);
+        alert("授業を更新しました！");
+      } else {
+        // 【新規作成モード】
+        const response = await axios.post(`${API_BASE_URL}/api/classes`, {
+          name: newClassName,
+          year: Number(newClassYear),
+          semester: newClassSemester,
+          color: newClassColor,
+        });
+
+        setClasses([...classes, response.data]);
+        setNewClassId(response.data.id);
+        setInputTab("task");
+        alert("授業を新しく登録しました！");
+      }
+
+      // 入力初期化
       setNewClassName("");
       setNewClassColor("#3b82f6");
-      setNewClassId(response.data.id); // 登録した授業をセレクトボックスの選択状態にする
-      setInputTab("task");
-      alert("授業を新しく登録しました！");
     } catch (err) {
-      console.error("Add class error:", err);
-      alert("授業の登録に失敗しました。");
+      console.error("Save class error:", err);
+      alert(
+        "授業の保存に失敗しました。バックエンドに更新APIが実装されているか確認してください。",
+      );
     }
   };
 
-  // テンプレートの新規登録処理
-  const handleAddTemplate = async (e: React.FormEvent) => {
+  // 2-B. 授業の編集フォーム呼び出し
+  const startEditClass = (cls: ClassInfo) => {
+    setEditingClassId(cls.id);
+    setNewClassName(cls.name);
+    setNewClassYear(cls.year);
+    setNewClassSemester(cls.semester);
+    setNewClassColor(cls.color);
+  };
+
+  // 2-C. 授業の削除処理
+  const handleDeleteClass = async (classId: number) => {
+    const hasAssignments = tasks.some((t) => t.classId === classId);
+    const hasTemplates = templates.some((t) => t.classId === classId);
+
+    let warningMsg = "この授業を削除してもよろしいですか？";
+    if (hasAssignments || hasTemplates) {
+      warningMsg =
+        "⚠️警告: この授業に紐づいている課題やテンプレートも一緒にすべて削除されますが、本当によろしいですか？";
+    }
+
+    if (!confirm(warningMsg)) return;
+
+    try {
+      await axios.delete(`${API_BASE_URL}/api/classes/${classId}`);
+
+      // 授業、課題、テンプレートの State から一斉除外
+      setClasses(classes.filter((c) => c.id !== classId));
+      setTasks(tasks.filter((t) => t.classId !== classId));
+      setTemplates(templates.filter((t) => t.classId !== classId));
+
+      if (newClassId === classId) setNewClassId("");
+      if (editingClassId === classId) setEditingClassId(null);
+
+      alert("授業と紐づく全データを削除しました。");
+    } catch (err) {
+      console.error("Delete class error:", err);
+      alert(
+        "授業の削除に失敗しました。バックエンドに削除APIが実装されているか確認してください。",
+      );
+    }
+  };
+
+  // 3-A. テンプレートの新規登録・編集の送信処理
+  const handleSaveTemplate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTemplateTitle.trim() || !newTemplateClassId) return;
 
     try {
-      const response = await axios.post(`${API_BASE_URL}/api/templates`, {
-        name: newTemplateTitle, // データベースの title に詰め替えられるよう name で送信
-        estimatedTime: Number(newTemplateEstimatedTime),
-        memo: newTemplateMemo,
-        classId: Number(newTemplateClassId),
-      });
+      if (editingTemplateId !== null) {
+        // 【編集モード】
+        await axios.put(`${API_BASE_URL}/api/templates/${editingTemplateId}`, {
+          name: newTemplateTitle, // DBの title にマッピングするため name で送信
+          estimatedTime: Number(newTemplateEstimatedTime),
+          memo: newTemplateMemo,
+          classId: Number(newTemplateClassId),
+        });
 
-      const createdTemplate = {
-        ...response.data,
-        title: response.data.title || newTemplateTitle,
-        class: classes.find((c) => c.id === Number(newTemplateClassId))!,
-      };
+        const updatedClass = classes.find(
+          (c) => c.id === Number(newTemplateClassId),
+        )!;
 
-      setTemplates([...templates, createdTemplate]);
+        setTemplates(
+          templates.map((t) =>
+            t.id === editingTemplateId
+              ? {
+                  ...t,
+                  title: newTemplateTitle,
+                  estimatedTime: Number(newTemplateEstimatedTime),
+                  memo: newTemplateMemo,
+                  classId: Number(newTemplateClassId),
+                  class: updatedClass,
+                }
+              : t,
+          ),
+        );
 
-      // 登録完了後に初期化し、課題作成タブで即呼び出せるようにする
+        setEditingTemplateId(null);
+        alert("テンプレートを更新しました！");
+      } else {
+        // 【新規作成モード】
+        const response = await axios.post(`${API_BASE_URL}/api/templates`, {
+          name: newTemplateTitle,
+          estimatedTime: Number(newTemplateEstimatedTime),
+          memo: newTemplateMemo,
+          classId: Number(newTemplateClassId),
+        });
+
+        const createdTemplate = {
+          ...response.data,
+          title: response.data.title || newTemplateTitle,
+          class: classes.find((c) => c.id === Number(newTemplateClassId))!,
+        };
+
+        setTemplates([...templates, createdTemplate]);
+        setInputTab("task");
+        alert("頻出課題テンプレートを保存しました！");
+      }
+
+      // フォーム初期化
       setNewTemplateTitle("");
       setNewTemplateEstimatedTime(30);
       setNewTemplateMemo("");
       setNewTemplateClassId("");
-      setInputTab("task");
-      alert("頻出課題テンプレートを保存しました！");
     } catch (err) {
-      console.error("Add template error:", err);
-      alert("テンプレートの登録に失敗しました。");
+      console.error("Save template error:", err);
+      alert(
+        "テンプレートの保存に失敗しました。バックエンドに更新APIが実装されているか確認してください。",
+      );
     }
   };
 
-  // 課題の編集用モーダルを開く
+  // 3-B. テンプレートの編集フォーム呼び出し
+  const startEditTemplate = (tmpl: Template) => {
+    setEditingTemplateId(tmpl.id);
+    setNewTemplateTitle(tmpl.title);
+    setNewTemplateEstimatedTime(tmpl.estimatedTime);
+    setNewTemplateMemo(tmpl.memo || "");
+    setNewTemplateClassId(tmpl.classId);
+  };
+
+  // 3-C. テンプレートの削除処理
+  const handleDeleteTemplate = async (templateId: number) => {
+    if (!confirm("このテンプレートを削除してもよろしいですか？")) return;
+
+    try {
+      await axios.delete(`${API_BASE_URL}/api/templates/${templateId}`);
+      setTemplates(templates.filter((t) => t.id !== templateId));
+
+      if (editingTemplateId === templateId) setEditingTemplateId(null);
+      alert("テンプレートを削除しました。");
+    } catch (err) {
+      console.error("Delete template error:", err);
+      alert(
+        "テンプレートの削除に失敗しました。バックエンドに削除APIが実装されているか確認してください。",
+      );
+    }
+  };
+
+  // 4-A. 課題の編集用モーダルを開く
   const openEditModal = (task: Task) => {
     setEditingTask(task);
-
     const dateObj = new Date(task.dueDate);
     const tzOffset = dateObj.getTimezoneOffset() * 60000;
     const localISODate = new Date(dateObj.getTime() - tzOffset)
@@ -323,7 +475,7 @@ export default function App() {
     });
   };
 
-  // 課題の編集（保存）処理
+  // 4-B. 課題の編集（保存）処理
   const handleUpdateTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (
@@ -371,7 +523,7 @@ export default function App() {
     }
   };
 
-  // 課題の完了・未完了切り替え
+  // 5. 課題の完了・未完了切り替え
   const handleToggleComplete = async (
     taskId: number,
     currentStatus: boolean,
@@ -391,7 +543,7 @@ export default function App() {
     }
   };
 
-  // 課題の削除処理
+  // 6. 課題の削除処理
   const handleDeleteTask = async (taskId: number) => {
     if (!confirm("この課題を削除してもよろしいですか？")) return;
 
@@ -404,31 +556,29 @@ export default function App() {
     }
   };
 
-  // 【最重要ロジック】優先度の自動算出
-  // 式: 想定作業時間（時間単位） ÷ 期日までの残り時間（時間単位）
+  // 優先度の自動算出
   const calculatePriority = (
     estimatedTimeMinutes: number,
     dueDateStr: string,
   ) => {
     const dueDate = new Date(dueDateStr);
     const diffMs = dueDate.getTime() - currentTime.getTime();
-    const diffHours = diffMs / (1000 * 60 * 60); // ミリ秒を時間に変換
+    const diffHours = diffMs / (1000 * 60 * 60);
 
     if (diffHours <= 0) {
-      return { value: 99.9, isOverdue: true }; // すでに期日を過ぎている場合
+      return { value: 99.9, isOverdue: true };
     }
 
-    const estimatedHours = estimatedTimeMinutes / 60; // 分を時間に変換
+    const estimatedHours = estimatedTimeMinutes / 60;
     const priority = estimatedHours / diffHours;
     return { value: Number(priority.toFixed(2)), isOverdue: false };
   };
 
-  // 並び替え・整理された課題のリスト（useMemoで効率化）
+  // 並び替え・整理されたリスト
   const sortedTasks = useMemo(() => {
     const activeTasks = tasks.filter((t) => !t.isCompleted);
     const completedTasks = tasks.filter((t) => t.isCompleted);
 
-    // 未完了タスクに対してソートをかける
     const sortLogic = (a: Task, b: Task) => {
       if (sortBy === "dueDate") {
         return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
@@ -449,7 +599,7 @@ export default function App() {
     };
   }, [tasks, sortBy, currentTime]);
 
-  // カレンダーの月移動
+  // カレンダー移動
   const prevMonth = () => {
     if (calendarMonth === 0) {
       setCalendarMonth(11);
@@ -468,18 +618,17 @@ export default function App() {
     }
   };
 
-  // --- カレンダービューのレンダリング関数 ---
+  // カレンダービュー
   const renderCalendarView = () => {
-    const firstDay = new Date(calendarYear, calendarMonth, 1).getDay(); // 月の最初の曜日
-    const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate(); // 月の日数
+    const firstDay = new Date(calendarYear, calendarMonth, 1).getDay();
+    const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
 
     const days: (number | null)[] = [];
-    for (let i = 0; i < firstDay; i++) days.push(null); // 前月の空枠
-    for (let i = 1; i <= daysInMonth; i++) days.push(i); // 今月の日付
+    for (let i = 0; i < firstDay; i++) days.push(null);
+    for (let i = 1; i <= daysInMonth; i++) days.push(i);
 
     return (
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm animate-in fade-in duration-200">
-        {/* カレンダーヘッダー */}
         <div className="p-5 border-b border-slate-200 bg-slate-50 flex flex-col sm:flex-row justify-between items-center gap-4">
           <div className="flex items-center space-x-4">
             <button
@@ -504,7 +653,6 @@ export default function App() {
           </span>
         </div>
 
-        {/* 曜日・日付グリッド */}
         <div className="grid grid-cols-7 gap-px bg-slate-100">
           {["日", "月", "火", "水", "木", "金", "土"].map((d, idx) => (
             <div
@@ -531,7 +679,6 @@ export default function App() {
               );
             }
 
-            // この日に期日を迎える課題をすべて取得
             const dayTasks = tasks.filter((t) => {
               const d = new Date(t.dueDate);
               return (
@@ -541,7 +688,6 @@ export default function App() {
               );
             });
 
-            // 本日判定
             const isToday =
               day === new Date().getDate() &&
               calendarMonth === new Date().getMonth() &&
@@ -554,7 +700,6 @@ export default function App() {
                   isToday ? "bg-indigo-50/30 ring-1 ring-indigo-500/20" : ""
                 }`}
               >
-                {/* 日付ラベル */}
                 <div className="flex justify-between items-center mb-1">
                   <span
                     className={`text-xs font-black p-1 w-6 h-6 rounded-lg flex items-center justify-center ${
@@ -572,7 +717,6 @@ export default function App() {
                   )}
                 </div>
 
-                {/* 課題のミニバッジリスト */}
                 <div className="mt-1 space-y-1.5 flex-1 overflow-y-auto max-h-[85px] custom-scrollbar">
                   {dayTasks.map((t) => {
                     const priorityInfo = calculatePriority(
@@ -669,7 +813,6 @@ export default function App() {
           <div className="space-y-8">
             {/* ビュー切り替え＆操作パネル */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-              {/* 表示モードスイッチ */}
               <div className="flex bg-slate-200/80 p-1 rounded-2xl shadow-inner shrink-0">
                 <button
                   onClick={() => setViewMode("list")}
@@ -695,7 +838,6 @@ export default function App() {
                 </button>
               </div>
 
-              {/* リスト表示中のソート操作UI */}
               {viewMode === "list" && (
                 <div className="flex items-center space-x-2 bg-slate-200/60 p-1 rounded-xl shadow-sm">
                   <span className="text-xs text-slate-500 font-bold px-2 flex items-center gap-1">
@@ -726,11 +868,10 @@ export default function App() {
               )}
             </div>
 
-            {/* メイン切り替え部分 */}
+            {/* メインビュー */}
             {viewMode === "calendar" ? (
               renderCalendarView()
             ) : (
-              /* リスト表示エリア */
               <div className="space-y-8 animate-in fade-in duration-200">
                 <div>
                   <h2 className="text-lg font-bold text-slate-900 flex items-center space-x-2 mb-5">
@@ -909,7 +1050,7 @@ export default function App() {
                   )}
                 </div>
 
-                {/* 完了済みの課題エリア */}
+                {/* 完了済みの課題 */}
                 {sortedTasks.completed.length > 0 && (
                   <div className="border-t border-slate-200 pt-8">
                     <h2 className="text-lg font-bold text-slate-500 mb-4 flex items-center space-x-2">
@@ -965,15 +1106,15 @@ export default function App() {
         )}
       </main>
 
-      {/* 🚀 新規登録マルチモーダル (課題・授業・テンプレートの統合登録システム) */}
+      {/* 🚀 新規登録マルチモーダル (課題・授業・テンプレートの統合登録・管理システム) */}
       {isAddModalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl w-full max-w-md shadow-xl border border-slate-100 overflow-hidden animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-[90vh]">
-            {/* ヘッダー・タブ切り替え */}
+            {/* ヘッダー・タブ */}
             <div className="border-b border-slate-100 bg-slate-50 flex flex-col">
               <div className="flex items-center justify-between px-6 pt-4 pb-2">
                 <h3 className="font-black text-slate-800 text-base">
-                  CampusTasks 新規登録
+                  CampusTasks 管理パネル
                 </h3>
                 <button
                   onClick={() => setIsAddModalOpen(false)}
@@ -996,19 +1137,18 @@ export default function App() {
                     }`}
                   >
                     {tab === "task" && "課題を登録"}
-                    {tab === "class" && "授業を登録"}
-                    {tab === "template" && "テンプレート"}
+                    {tab === "class" && "授業の管理"}
+                    {tab === "template" && "テンプレート管理"}
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* 各種フォームコンテンツ */}
+            {/* モーダル内コンテンツ */}
             <div className="p-6 overflow-y-auto flex-1 custom-scrollbar">
               {/* 1. 課題追加フォーム */}
               {inputTab === "task" && (
                 <form onSubmit={handleAddTask} className="space-y-4">
-                  {/* 【新機能】テンプレート呼び出し用ドロップダウン */}
                   {templates.length > 0 && (
                     <div className="bg-indigo-50/50 border border-indigo-100 rounded-xl p-3">
                       <label className="block text-[10px] font-black text-indigo-600 uppercase tracking-wider mb-1 flex items-center gap-1.5">
@@ -1132,199 +1272,341 @@ export default function App() {
                 </form>
               )}
 
-              {/* 2. 授業登録フォーム */}
+              {/* 2. 授業登録＆管理フォーム */}
               {inputTab === "class" && (
-                <form onSubmit={handleAddClass} className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                      授業名
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="例: データベース論"
-                      value={newClassName}
-                      onChange={(e) => setNewClassName(e.target.value)}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-medium placeholder:text-slate-400 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition outline-none"
-                      required
-                    />
-                  </div>
+                <div className="space-y-6">
+                  <form
+                    onSubmit={handleSaveClass}
+                    className="space-y-4 bg-slate-50/50 p-4 rounded-xl border border-slate-200 shadow-inner"
+                  >
+                    <div className="flex justify-between items-center">
+                      <span className="text-[11px] font-black tracking-wider text-indigo-600 uppercase">
+                        {editingClassId !== null
+                          ? "● 授業の編集モード"
+                          : "＋ 新しい授業を登録"}
+                      </span>
+                      {editingClassId !== null && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingClassId(null);
+                            setNewClassName("");
+                            setNewClassColor("#3b82f6");
+                          }}
+                          className="text-[10px] font-bold text-rose-500 hover:underline flex items-center"
+                        >
+                          編集をキャンセル
+                        </button>
+                      )}
+                    </div>
 
-                  <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                        開講年度
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                        授業名
                       </label>
                       <input
-                        type="number"
-                        value={newClassYear}
-                        onChange={(e) =>
-                          setNewClassYear(Number(e.target.value))
-                        }
-                        className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-medium focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition outline-none"
+                        type="text"
+                        placeholder="例: データベース論"
+                        value={newClassName}
+                        onChange={(e) => setNewClassName(e.target.value)}
+                        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-semibold placeholder:text-slate-400 focus:ring-2 focus:ring-indigo-500 outline-none"
+                        required
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                          開講年度
+                        </label>
+                        <input
+                          type="number"
+                          value={newClassYear}
+                          onChange={(e) =>
+                            setNewClassYear(Number(e.target.value))
+                          }
+                          className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:ring-2 focus:ring-indigo-500 outline-none"
+                          required
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                          学期
+                        </label>
+                        <div className="relative">
+                          <select
+                            value={newClassSemester}
+                            onChange={(e) =>
+                              setNewClassSemester(e.target.value)
+                            }
+                            className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:ring-2 focus:ring-indigo-500 outline-none appearance-none"
+                          >
+                            <option value="前期">前期</option>
+                            <option value="後期">後期</option>
+                            <option value="通年">通年</option>
+                          </select>
+                          <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-2.5 pointer-events-none" />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                        カラー
+                      </label>
+                      <div className="flex flex-wrap gap-2 p-2 bg-white rounded-lg border border-slate-200">
+                        {[
+                          "#ef4444",
+                          "#f97316",
+                          "#eab308",
+                          "#10b981",
+                          "#3b82f6",
+                          "#8b5cf6",
+                          "#ec4899",
+                          "#64748b",
+                        ].map((color) => (
+                          <button
+                            key={color}
+                            type="button"
+                            onClick={() => setNewClassColor(color)}
+                            className={`w-6 h-6 rounded-full border transform hover:scale-110 active:scale-95 transition ${
+                              newClassColor === color
+                                ? "border-slate-800 scale-105 shadow"
+                                : "border-transparent"
+                            }`}
+                            style={{ backgroundColor: color }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-xl text-xs transition shadow-md shadow-indigo-100"
+                    >
+                      {editingClassId !== null
+                        ? "変更を保存する"
+                        : "授業を登録"}
+                    </button>
+                  </form>
+
+                  {/* 登録済み授業一覧マネージャー */}
+                  <div className="space-y-2">
+                    <h4 className="text-xs font-black text-slate-500 border-b border-slate-100 pb-1.5 flex items-center gap-1.5">
+                      <Settings className="w-3.5 h-3.5" />
+                      <span>登録済みの授業一覧（{classes.length}件）</span>
+                    </h4>
+                    <div className="space-y-1.5 max-h-[160px] overflow-y-auto custom-scrollbar">
+                      {classes.map((cls) => (
+                        <div
+                          key={cls.id}
+                          className="flex items-center justify-between bg-white border border-slate-200 rounded-xl p-2.5 shadow-sm"
+                        >
+                          <div className="flex items-center space-x-2">
+                            <span
+                              className="w-3 h-3 rounded-full"
+                              style={{ backgroundColor: cls.color }}
+                            />
+                            <span className="text-xs font-bold text-slate-800">
+                              {cls.name}
+                            </span>
+                            <span className="text-[10px] text-slate-400 font-medium">
+                              ({cls.year} {cls.semester})
+                            </span>
+                          </div>
+                          <div className="flex items-center space-x-1">
+                            <button
+                              type="button"
+                              onClick={() => startEditClass(cls)}
+                              className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-slate-100 rounded transition"
+                              title="編集"
+                            >
+                              <Edit2 className="w-3 h-3" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteClass(cls.id)}
+                              className="p-1 text-slate-400 hover:text-rose-600 hover:bg-slate-100 rounded transition"
+                              title="削除"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 3. テンプレート登録＆管理フォーム */}
+              {inputTab === "template" && (
+                <div className="space-y-6">
+                  <form
+                    onSubmit={handleSaveTemplate}
+                    className="space-y-4 bg-slate-50/50 p-4 rounded-xl border border-slate-200 shadow-inner"
+                  >
+                    <div className="flex justify-between items-center">
+                      <span className="text-[11px] font-black tracking-wider text-indigo-600 uppercase">
+                        {editingTemplateId !== null
+                          ? "● テンプレート編集モード"
+                          : "＋ 頻出課題テンプレートを登録"}
+                      </span>
+                      {editingTemplateId !== null && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingTemplateId(null);
+                            setNewTemplateTitle("");
+                            setNewTemplateEstimatedTime(30);
+                            setNewTemplateMemo("");
+                            setNewTemplateClassId("");
+                          }}
+                          className="text-[10px] font-bold text-rose-500 hover:underline"
+                        >
+                          編集をキャンセル
+                        </button>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                        対象の授業を選択
+                      </label>
+                      <div className="relative">
+                        <select
+                          value={newTemplateClassId}
+                          onChange={(e) =>
+                            setNewTemplateClassId(Number(e.target.value))
+                          }
+                          className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:ring-2 focus:ring-indigo-500 outline-none appearance-none cursor-pointer"
+                          required
+                        >
+                          <option value="">授業を選択してください</option>
+                          {classes.map((cls) => (
+                            <option key={cls.id} value={cls.id}>
+                              {cls.name}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-2.5 pointer-events-none" />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                        頻出課題のタイトル
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="例: 【毎週】演習レポート提出"
+                        value={newTemplateTitle}
+                        onChange={(e) => setNewTemplateTitle(e.target.value)}
+                        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:ring-2 focus:ring-indigo-500 outline-none"
                         required
                       />
                     </div>
 
                     <div>
-                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                        開講学期
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                        想定される時間 (分)
                       </label>
-                      <div className="relative">
-                        <select
-                          value={newClassSemester}
-                          onChange={(e) => setNewClassSemester(e.target.value)}
-                          className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-medium focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition outline-none appearance-none cursor-pointer"
-                        >
-                          <option value="前期">前期</option>
-                          <option value="後期">後期</option>
-                          <option value="通年">通年</option>
-                        </select>
-                        <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3.5 top-3.5 pointer-events-none" />
-                      </div>
+                      <input
+                        type="number"
+                        min="1"
+                        placeholder="60"
+                        value={newTemplateEstimatedTime}
+                        onChange={(e) =>
+                          setNewTemplateEstimatedTime(Number(e.target.value))
+                        }
+                        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:ring-2 focus:ring-indigo-500 outline-none"
+                        required
+                      />
                     </div>
-                  </div>
 
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                      テーマカラー
-                    </label>
-                    <div className="flex flex-wrap gap-2.5 p-3 bg-slate-50 rounded-xl border border-slate-200">
-                      {[
-                        "#ef4444",
-                        "#f97316",
-                        "#eab308",
-                        "#10b981",
-                        "#3b82f6",
-                        "#8b5cf6",
-                        "#ec4899",
-                        "#64748b",
-                      ].map((color) => (
-                        <button
-                          key={color}
-                          type="button"
-                          onClick={() => setNewClassColor(color)}
-                          className={`w-8 h-8 rounded-full border-2 transition-all transform hover:scale-105 active:scale-95 ${
-                            newClassColor === color
-                              ? "border-slate-800 scale-110 shadow-md shadow-slate-300"
-                              : "border-transparent"
-                          }`}
-                          style={{ backgroundColor: color }}
-                        />
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                        固定メモ (任意)
+                      </label>
+                      <textarea
+                        placeholder="例: 指定のリポジトリにpushすること"
+                        value={newTemplateMemo}
+                        onChange={(e) => setNewTemplateMemo(e.target.value)}
+                        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:ring-2 focus:ring-indigo-500 outline-none h-16 resize-none"
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-xl text-xs transition shadow-md shadow-indigo-100"
+                    >
+                      {editingTemplateId !== null
+                        ? "変更を保存する"
+                        : "テンプレートを保存"}
+                    </button>
+                  </form>
+
+                  {/* 登録済みテンプレート一覧マネージャー */}
+                  <div className="space-y-2">
+                    <h4 className="text-xs font-black text-slate-500 border-b border-slate-100 pb-1.5 flex items-center gap-1.5">
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>
+                        登録済みのテンプレート（{templates.length}件）
+                      </span>
+                    </h4>
+                    <div className="space-y-1.5 max-h-[160px] overflow-y-auto custom-scrollbar">
+                      {templates.map((tmpl) => (
+                        <div
+                          key={tmpl.id}
+                          className="flex items-center justify-between bg-white border border-slate-200 rounded-xl p-2.5 shadow-sm"
+                        >
+                          <div className="flex flex-col min-w-0 pr-2">
+                            <span className="text-xs font-bold text-slate-800 truncate">
+                              {tmpl.title}
+                            </span>
+                            <span className="text-[9px] font-semibold text-slate-400 flex items-center gap-1 mt-0.5">
+                              <span
+                                className="w-2 h-2 rounded-full inline-block shrink-0"
+                                style={{ backgroundColor: tmpl.class?.color }}
+                              />
+                              <span className="truncate">
+                                {tmpl.class?.name || "紐づけなし"}
+                              </span>
+                              <span>•</span>
+                              <span>{tmpl.estimatedTime}分</span>
+                            </span>
+                          </div>
+                          <div className="flex items-center space-x-1 flex-shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => startEditTemplate(tmpl)}
+                              className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-slate-100 rounded transition"
+                              title="編集"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteTemplate(tmpl.id)}
+                              className="p-1 text-slate-400 hover:text-rose-600 hover:bg-slate-100 rounded transition"
+                              title="削除"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
                       ))}
                     </div>
                   </div>
-
-                  <div className="flex items-center space-x-3 pt-2">
-                    <button
-                      type="button"
-                      onClick={() => setIsAddModalOpen(false)}
-                      className="w-1/2 border border-slate-200 hover:bg-slate-50 text-slate-500 font-bold py-2.5 rounded-xl text-sm transition"
-                    >
-                      キャンセル
-                    </button>
-                    <button
-                      type="submit"
-                      className="w-1/2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl text-sm transition shadow-md shadow-indigo-100"
-                    >
-                      授業を登録
-                    </button>
-                  </div>
-                </form>
-              )}
-
-              {/* 3. テンプレート登録フォーム */}
-              {inputTab === "template" && (
-                <form onSubmit={handleAddTemplate} className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                      対象の授業を選択
-                    </label>
-                    <div className="relative">
-                      <select
-                        value={newTemplateClassId}
-                        onChange={(e) =>
-                          setNewTemplateClassId(Number(e.target.value))
-                        }
-                        className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-medium focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition outline-none appearance-none cursor-pointer"
-                        required
-                      >
-                        <option value="">授業を選択してください</option>
-                        {classes.map((cls) => (
-                          <option key={cls.id} value={cls.id}>
-                            {cls.name}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3.5 top-3.5 pointer-events-none" />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                      頻出課題のタイトル
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="例: 【毎週】演習レポート提出"
-                      value={newTemplateTitle}
-                      onChange={(e) => setNewTemplateTitle(e.target.value)}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-medium placeholder:text-slate-400 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition outline-none"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                      想定される時間 (分)
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      placeholder="60"
-                      value={newTemplateEstimatedTime}
-                      onChange={(e) =>
-                        setNewTemplateEstimatedTime(Number(e.target.value))
-                      }
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-medium focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition outline-none"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                      固定メモ (任意)
-                    </label>
-                    <textarea
-                      placeholder="例: 指定のリポジトリにpushすること"
-                      value={newTemplateMemo}
-                      onChange={(e) => setNewTemplateMemo(e.target.value)}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-medium placeholder:text-slate-400 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition outline-none h-20 resize-none"
-                    />
-                  </div>
-
-                  <div className="flex items-center space-x-3 pt-2">
-                    <button
-                      type="button"
-                      onClick={() => setIsAddModalOpen(false)}
-                      className="w-1/2 border border-slate-200 hover:bg-slate-50 text-slate-500 font-bold py-2.5 rounded-xl text-sm transition"
-                    >
-                      キャンセル
-                    </button>
-                    <button
-                      type="submit"
-                      className="w-1/2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl text-sm transition shadow-md shadow-indigo-100"
-                    >
-                      テンプレート登録
-                    </button>
-                  </div>
-                </form>
+                </div>
               )}
             </div>
           </div>
         </div>
       )}
 
-      {/* 2. 課題編集用モーダル */}
+      {/* 4. 課題の単体編集用モーダル */}
       {editingTask && editTaskData && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl w-full max-w-md shadow-xl border border-slate-100 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
