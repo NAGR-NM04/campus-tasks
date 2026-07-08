@@ -22,6 +22,7 @@ import {
   Sun,
   Moon,
   Check,
+  Filter,
 } from "lucide-react";
 
 // 型定義
@@ -97,6 +98,12 @@ export default function App() {
   // ソート基準 ('dueDate' = 期日順, 'priority' = 優先度順)
   const [sortBy, setSortBy] = useState<"dueDate" | "priority">("dueDate");
 
+  // 🔍 絞り込みフィルター用State
+  const [filterYear, setFilterYear] = useState<string>("all");
+  const [filterSemester, setFilterSemester] = useState<string>("all");
+  const [filterClass, setFilterClass] = useState<string>("all");
+  const [filterStatus, setFilterStatus] = useState<string>("active"); // 'all', 'active' (未完了のみ), 'completed' (完了済みのみ)
+
   // 新規登録マルチモーダルの状態
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [inputTab, setInputTab] = useState<"task" | "class" | "template">(
@@ -153,7 +160,6 @@ export default function App() {
       typeof window !== "undefined" &&
       !window.location.hostname.includes("localhost")
     ) {
-      // ユーザーの本物のRenderのバックエンドURL
       return "https://campus-tasks-backend.onrender.com";
     }
 
@@ -203,6 +209,12 @@ export default function App() {
   useEffect(() => {
     fetchData();
   }, [API_BASE_URL]);
+
+  // 登録されている授業からユニークな年度一覧を自動生成（降順）
+  const availableYears = useMemo(() => {
+    const years = classes.map((c) => c.year.toString());
+    return Array.from(new Set(years)).sort((a, b) => b.localeCompare(a));
+  }, [classes]);
 
   // テンプレート呼び出し（自動入力）処理
   const handleApplyTemplate = (templateIdStr: string) => {
@@ -465,7 +477,7 @@ export default function App() {
     });
   };
 
-  // 4-B. 課題 of 編集（保存）処理
+  // 4-B. 課題の編集（保存）処理
   const handleUpdateTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (
@@ -564,11 +576,33 @@ export default function App() {
     return { value: Number(priority.toFixed(2)), isOverdue: false };
   };
 
-  // 並び替え・整理されたリスト
-  const sortedTasks = useMemo(() => {
-    const activeTasks = tasks.filter((t) => !t.isCompleted);
-    const completedTasks = tasks.filter((t) => t.isCompleted);
+  // 🔍 絞り込みフィルター適用のタスク一覧
+  const filteredTasks = useMemo(() => {
+    return tasks.filter((t) => {
+      if (!t.class) return false;
 
+      // 1. 年度絞り込み
+      if (filterYear !== "all" && t.class.year.toString() !== filterYear)
+        return false;
+
+      // 2. 学期絞り込み
+      if (filterSemester !== "all" && t.class.semester !== filterSemester)
+        return false;
+
+      // 3. 授業絞り込み
+      if (filterClass !== "all" && t.classId.toString() !== filterClass)
+        return false;
+
+      // 4. 完了ステータス絞り込み
+      if (filterStatus === "active" && t.isCompleted) return false;
+      if (filterStatus === "completed" && !t.isCompleted) return false;
+
+      return true;
+    });
+  }, [tasks, filterYear, filterSemester, filterClass, filterStatus]);
+
+  // 並び替え・整理されたリスト (1つのフラットな配列として一本化ソートする)
+  const sortedTasks = useMemo(() => {
     const sortLogic = (a: Task, b: Task) => {
       if (sortBy === "dueDate") {
         return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
@@ -583,11 +617,20 @@ export default function App() {
       }
     };
 
-    return {
-      active: [...activeTasks].sort(sortLogic),
-      completed: completedTasks,
-    };
-  }, [tasks, sortBy, currentTime]);
+    return [...filteredTasks].sort(sortLogic);
+  }, [filteredTasks, sortBy, currentTime]);
+
+  // フィルター状態に基づいた見出しテキストの生成
+  const listHeaderLabel = useMemo(() => {
+    switch (filterStatus) {
+      case "active":
+        return "未完了の課題";
+      case "completed":
+        return "完了済みの課題";
+      default:
+        return "すべての課題";
+    }
+  }, [filterStatus]);
 
   // カレンダー移動
   const prevMonth = () => {
@@ -638,7 +681,7 @@ export default function App() {
               onClick={prevMonth}
               className={`p-2 rounded-xl transition duration-150 ${
                 isDarkMode
-                  ? "hover:bg-slate-800 text-slate-350"
+                  ? "hover:bg-slate-200 text-slate-350"
                   : "hover:bg-slate-200 text-slate-600"
               }`}
             >
@@ -653,7 +696,7 @@ export default function App() {
               onClick={nextMonth}
               className={`p-2 rounded-xl transition duration-150 ${
                 isDarkMode
-                  ? "hover:bg-slate-800 text-slate-350"
+                  ? "hover:bg-slate-200 text-slate-350"
                   : "hover:bg-slate-200 text-slate-600"
               }`}
             >
@@ -705,8 +748,8 @@ export default function App() {
               );
             }
 
-            // この日に期日を迎える課題
-            const dayTasks = tasks.filter((t) => {
+            // この日に期日を迎える「絞り込み済み」の課題
+            const dayTasks = filteredTasks.filter((t) => {
               const d = new Date(t.dueDate);
               return (
                 d.getFullYear() === calendarYear &&
@@ -824,7 +867,7 @@ export default function App() {
       >
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="bg-indigo-650 text-white p-2.5 rounded-2xl shadow-md">
+            <div className="bg-indigo-655 text-white p-2.5 rounded-2xl shadow-md">
               <BookOpen className="w-5.5 h-5.5" />
             </div>
             <div>
@@ -852,7 +895,7 @@ export default function App() {
               className={`p-2.5 rounded-2xl transition-all duration-200 hover:scale-105 active:scale-95 ${
                 isDarkMode
                   ? "bg-slate-800 text-amber-400 hover:bg-slate-700"
-                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  : "bg-slate-100 text-slate-655 hover:bg-slate-200"
               }`}
               title={
                 isDarkMode ? "ライトモードに切り替え" : "ダークモードに切り替え"
@@ -909,93 +952,183 @@ export default function App() {
           </div>
         ) : (
           <div className="space-y-8">
-            {/* 操作パネル（表示切り替え ＆ ソート） */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-              {/* 表示モードトグル */}
+            {/* 🔍 コントロールバー（フィルター ＆ 表示切り替え ＆ ソート） */}
+            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+              {/* フィルターセクション */}
               <div
-                className={`flex p-1 rounded-2xl shadow-inner shrink-0 ${
-                  isDarkMode ? "bg-slate-900" : "bg-slate-200/80"
+                className={`flex flex-wrap items-center gap-3 p-2.5 rounded-2xl border w-full lg:w-auto shadow-sm transition-colors duration-300 ${
+                  isDarkMode
+                    ? "bg-slate-900 border-slate-800"
+                    : "bg-white border-slate-200"
                 }`}
               >
-                <button
-                  onClick={() => setViewMode("list")}
-                  className={`flex items-center space-x-2 px-5 py-2 rounded-xl text-xs font-black transition duration-200 ${
-                    viewMode === "list"
-                      ? isDarkMode
-                        ? "bg-slate-800 text-indigo-400 shadow-md"
-                        : "bg-white text-indigo-650 shadow-md"
-                      : isDarkMode
-                        ? "text-slate-400 hover:text-slate-200"
-                        : "text-slate-600 hover:text-slate-900"
+                <div className="flex items-center gap-1.5 px-1.5 text-slate-400">
+                  <Filter className="w-4 h-4" />
+                  <span className="text-xs font-bold hidden sm:inline">
+                    絞り込み:
+                  </span>
+                </div>
+
+                {/* 年度フィルター */}
+                <select
+                  value={filterYear}
+                  onChange={(e) => setFilterYear(e.target.value)}
+                  className={`text-xs border-none rounded-lg py-1.5 px-3 font-semibold cursor-pointer outline-none focus:ring-2 focus:ring-indigo-500/50 ${
+                    isDarkMode
+                      ? "bg-slate-800 text-slate-250"
+                      : "bg-slate-100 text-slate-700"
                   }`}
                 >
-                  <List className="w-4 h-4" />
-                  <span>リスト表示</span>
-                </button>
-                <button
-                  onClick={() => setViewMode("calendar")}
-                  className={`flex items-center space-x-2 px-5 py-2 rounded-xl text-xs font-black transition duration-200 ${
-                    viewMode === "calendar"
-                      ? isDarkMode
-                        ? "bg-slate-800 text-indigo-400 shadow-md"
-                        : "bg-white text-indigo-650 shadow-md"
-                      : isDarkMode
-                        ? "text-slate-400 hover:text-slate-200"
-                        : "text-slate-600 hover:text-slate-900"
+                  <option value="all">すべての年度</option>
+                  {availableYears.map((year) => (
+                    <option key={year} value={year}>
+                      {year}年度
+                    </option>
+                  ))}
+                </select>
+
+                {/* 学期フィルター */}
+                <select
+                  value={filterSemester}
+                  onChange={(e) => setFilterSemester(e.target.value)}
+                  className={`text-xs border-none rounded-lg py-1.5 px-3 font-semibold cursor-pointer outline-none focus:ring-2 focus:ring-indigo-500/50 ${
+                    isDarkMode
+                      ? "bg-slate-800 text-slate-250"
+                      : "bg-slate-100 text-slate-700"
                   }`}
                 >
-                  <CalendarIcon className="w-4 h-4" />
-                  <span>カレンダー表示</span>
-                </button>
+                  <option value="all">すべての学期</option>
+                  <option value="前期">前期</option>
+                  <option value="後期">後期</option>
+                  <option value="通年">通年</option>
+                </select>
+
+                {/* 授業フィルター */}
+                <select
+                  value={filterClass}
+                  onChange={(e) => setFilterClass(e.target.value)}
+                  className={`text-xs border-none rounded-lg py-1.5 px-3 font-semibold cursor-pointer outline-none focus:ring-2 focus:ring-indigo-500/50 max-w-[150px] truncate ${
+                    isDarkMode
+                      ? "bg-slate-800 text-slate-250"
+                      : "bg-slate-100 text-slate-700"
+                  }`}
+                >
+                  <option value="all">すべての授業</option>
+                  {classes.map((c) => (
+                    <option key={c.id} value={c.id.toString()}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+
+                <div
+                  className={`h-5 w-px mx-1 hidden sm:block ${isDarkMode ? "bg-slate-800" : "bg-slate-200"}`}
+                ></div>
+
+                {/* ステータスフィルター */}
+                <select
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                  className={`text-xs border-none rounded-lg py-1.5 px-3 font-semibold cursor-pointer outline-none focus:ring-2 focus:ring-indigo-500/50 ${
+                    isDarkMode
+                      ? "bg-slate-800 text-slate-250"
+                      : "bg-slate-100 text-slate-700"
+                  }`}
+                >
+                  <option value="all">すべて表示</option>
+                  <option value="active">未完了のみ</option>
+                  <option value="completed">完了済みのみ</option>
+                </select>
               </div>
 
-              {/* ソートボタン（リスト表示時のみ） */}
-              {viewMode === "list" && (
+              {/* 表示モードトグル ＆ ソート */}
+              <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto justify-between lg:justify-end">
+                {/* 表示モードスイッチ */}
                 <div
-                  className={`flex items-center space-x-2 p-1 rounded-xl shadow-sm border ${
-                    isDarkMode
-                      ? "bg-slate-900 border-slate-800"
-                      : "bg-slate-200/60 border-transparent"
+                  className={`flex p-1 rounded-2xl shadow-inner shrink-0 ${
+                    isDarkMode ? "bg-slate-900" : "bg-slate-200/80"
                   }`}
                 >
-                  <span
-                    className={`text-xs font-bold px-2 flex items-center gap-1 ${
-                      isDarkMode ? "text-slate-400" : "text-slate-500"
-                    }`}
-                  >
-                    <ArrowUpDown className="w-3 h-3" />
-                    並び替え:
-                  </span>
                   <button
-                    onClick={() => setSortBy("dueDate")}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition duration-200 ${
-                      sortBy === "dueDate"
+                    onClick={() => setViewMode("list")}
+                    className={`flex items-center space-x-2 px-5 py-2 rounded-xl text-xs font-black transition duration-200 ${
+                      viewMode === "list"
                         ? isDarkMode
-                          ? "bg-slate-800 text-indigo-400"
-                          : "bg-white text-indigo-600 shadow-sm"
+                          ? "bg-slate-800 text-indigo-400 shadow-md"
+                          : "bg-white text-indigo-650 shadow-md"
                         : isDarkMode
                           ? "text-slate-400 hover:text-slate-200"
                           : "text-slate-600 hover:text-slate-900"
                     }`}
                   >
-                    期日順
+                    <List className="w-4 h-4" />
+                    <span>リスト表示</span>
                   </button>
                   <button
-                    onClick={() => setSortBy("priority")}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition duration-200 ${
-                      sortBy === "priority"
+                    onClick={() => setViewMode("calendar")}
+                    className={`flex items-center space-x-2 px-5 py-2 rounded-xl text-xs font-black transition duration-200 ${
+                      viewMode === "calendar"
                         ? isDarkMode
-                          ? "bg-slate-800 text-indigo-400"
-                          : "bg-white text-indigo-600 shadow-sm"
+                          ? "bg-slate-800 text-indigo-400 shadow-md"
+                          : "bg-white text-indigo-650 shadow-md"
                         : isDarkMode
                           ? "text-slate-400 hover:text-slate-200"
                           : "text-slate-600 hover:text-slate-900"
                     }`}
                   >
-                    優先度順 (自動計算)
+                    <CalendarIcon className="w-4 h-4" />
+                    <span>カレンダー表示</span>
                   </button>
                 </div>
-              )}
+
+                {/* ソートボタン（リスト表示時のみ） */}
+                {viewMode === "list" && (
+                  <div
+                    className={`flex items-center space-x-2 p-1 rounded-xl shadow-sm border ${
+                      isDarkMode
+                        ? "bg-slate-900 border-slate-800"
+                        : "bg-slate-200/60 border-transparent"
+                    }`}
+                  >
+                    <span
+                      className={`text-xs font-bold px-2 flex items-center gap-1 ${
+                        isDarkMode ? "text-slate-400" : "text-slate-500"
+                      }`}
+                    >
+                      <ArrowUpDown className="w-3 h-3" />
+                      並び替え:
+                    </span>
+                    <button
+                      onClick={() => setSortBy("dueDate")}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition duration-200 ${
+                        sortBy === "dueDate"
+                          ? isDarkMode
+                            ? "bg-slate-800 text-indigo-400"
+                            : "bg-white text-indigo-600 shadow-sm"
+                          : isDarkMode
+                            ? "text-slate-400 hover:text-slate-200"
+                            : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      期日順
+                    </button>
+                    <button
+                      onClick={() => setSortBy("priority")}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition duration-200 ${
+                        sortBy === "priority"
+                          ? isDarkMode
+                            ? "bg-slate-800 text-indigo-400"
+                            : "bg-white text-indigo-600 shadow-sm"
+                          : isDarkMode
+                            ? "text-slate-400 hover:text-slate-200"
+                            : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      優先度順
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* 各メインビューの切り替え */}
@@ -1010,7 +1143,7 @@ export default function App() {
                       isDarkMode ? "text-slate-200" : "text-slate-900"
                     }`}
                   >
-                    <span>未完了の課題</span>
+                    <span>{listHeaderLabel}</span>
                     <span
                       className={`text-xs px-2.5 py-0.5 rounded-full font-bold ${
                         isDarkMode
@@ -1018,11 +1151,11 @@ export default function App() {
                           : "bg-indigo-100 text-indigo-700"
                       }`}
                     >
-                      {sortedTasks.active.length}件
+                      {sortedTasks.length}件
                     </span>
                   </h2>
 
-                  {sortedTasks.active.length === 0 ? (
+                  {sortedTasks.length === 0 ? (
                     <div
                       className={`border-2 border-dashed rounded-2xl py-12 px-4 text-center ${
                         isDarkMode
@@ -1036,7 +1169,7 @@ export default function App() {
                       <p
                         className={`font-medium ${isDarkMode ? "text-slate-400" : "text-slate-550"}`}
                       >
-                        現在、未完了の課題はありません！
+                        該当する課題はありません。
                       </p>
                       <button
                         onClick={() => {
@@ -1050,7 +1183,7 @@ export default function App() {
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {sortedTasks.active.map((task) => {
+                      {sortedTasks.map((task) => {
                         const priorityInfo = calculatePriority(
                           task.estimatedTime,
                           task.dueDate,
@@ -1063,7 +1196,7 @@ export default function App() {
                               isDarkMode
                                 ? "bg-slate-900 border-slate-800"
                                 : "bg-white border-slate-200"
-                            }`}
+                            } ${task.isCompleted ? "opacity-60" : ""}`}
                           >
                             {/* 授業カラーのインジケータ */}
                             <div
@@ -1088,7 +1221,17 @@ export default function App() {
                                   {task.class?.name || "授業不明"}
                                 </span>
 
-                                {priorityInfo.isOverdue ? (
+                                {task.isCompleted ? (
+                                  <span
+                                    className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
+                                      isDarkMode
+                                        ? "text-emerald-450 bg-emerald-950/30 border border-emerald-900/30"
+                                        : "text-emerald-700 bg-emerald-50 border border-emerald-100"
+                                    }`}
+                                  >
+                                    完了済み
+                                  </span>
+                                ) : priorityInfo.isOverdue ? (
                                   <span className="text-[11px] font-bold text-rose-500 bg-rose-500/10 border border-rose-500/30 px-2 py-0.5 rounded-full flex items-center space-x-1 animate-pulse">
                                     <AlertTriangle className="w-3 h-3 shrink-0" />
                                     <span>期限切れ!</span>
@@ -1110,7 +1253,13 @@ export default function App() {
                               </div>
 
                               <h3
-                                className={`font-bold text-base mb-4 leading-snug ${isDarkMode ? "text-slate-100" : "text-slate-800"}`}
+                                className={`font-bold text-base mb-4 leading-snug ${
+                                  task.isCompleted
+                                    ? "line-through text-slate-500"
+                                    : isDarkMode
+                                      ? "text-slate-100"
+                                      : "text-slate-800"
+                                }`}
                               >
                                 {task.title}
                               </h3>
@@ -1160,8 +1309,8 @@ export default function App() {
                                 )}
                               </div>
 
-                              {/* 優先度 リアルタイム進捗ゲージ */}
-                              {!priorityInfo.isOverdue && (
+                              {/* 優先度 リアルタイム進捗ゲージ (未完了時のみ表示) */}
+                              {!task.isCompleted && !priorityInfo.isOverdue && (
                                 <div className="mb-4">
                                   <div className="flex items-center justify-between text-[10px] text-slate-450 font-bold mb-1">
                                     <span>着手ストレス（優先度）</span>
@@ -1201,13 +1350,21 @@ export default function App() {
                                     )
                                   }
                                   className={`flex items-center space-x-1.5 text-xs font-bold px-3 py-1.5 rounded-lg transition duration-150 ${
-                                    isDarkMode
-                                      ? "text-indigo-400 bg-indigo-950/40 hover:bg-indigo-900/40"
-                                      : "text-indigo-650 bg-indigo-50 hover:bg-indigo-100"
+                                    task.isCompleted
+                                      ? isDarkMode
+                                        ? "text-slate-400 bg-slate-800 hover:bg-slate-700"
+                                        : "text-slate-600 bg-slate-100 hover:bg-slate-200"
+                                      : isDarkMode
+                                        ? "text-indigo-400 bg-indigo-950/40 hover:bg-indigo-900/40"
+                                        : "text-indigo-650 bg-indigo-50 hover:bg-indigo-100"
                                   }`}
                                 >
                                   <CheckCircle className="w-3.5 h-3.5" />
-                                  <span>完了にする</span>
+                                  <span>
+                                    {task.isCompleted
+                                      ? "未完了に戻す"
+                                      : "完了にする"}
+                                  </span>
                                 </button>
 
                                 <div className="flex items-center space-x-1">
@@ -1216,7 +1373,7 @@ export default function App() {
                                     className={`p-1.5 rounded-lg transition duration-150 ${
                                       isDarkMode
                                         ? "hover:bg-slate-800 text-slate-400 hover:text-slate-200"
-                                        : "hover:bg-slate-100 text-slate-400 hover:text-slate-650"
+                                        : "hover:bg-slate-100 text-slate-400 hover:text-slate-655"
                                     }`}
                                     title="編集"
                                   >
@@ -1242,93 +1399,6 @@ export default function App() {
                     </div>
                   )}
                 </div>
-
-                {/* 完了済みの課題エリア */}
-                {sortedTasks.completed.length > 0 && (
-                  <div
-                    className={`border-t pt-8 ${isDarkMode ? "border-slate-800" : "border-slate-200"}`}
-                  >
-                    <h2
-                      className={`text-lg font-bold mb-4 flex items-center space-x-2 ${
-                        isDarkMode ? "text-slate-400" : "text-slate-500"
-                      }`}
-                    >
-                      <span>完了した課題</span>
-                      <span
-                        className={`text-xs px-2 py-0.5 rounded-full font-bold ${
-                          isDarkMode
-                            ? "bg-slate-800 text-slate-400"
-                            : "bg-slate-200 text-slate-600"
-                        }`}
-                      >
-                        {sortedTasks.completed.length}件
-                      </span>
-                    </h2>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {sortedTasks.completed.map((task) => (
-                        <div
-                          key={task.id}
-                          className={`border rounded-2xl p-5 shadow-sm flex flex-col justify-between transition duration-200 ${
-                            isDarkMode
-                              ? "bg-slate-900/60 border-slate-850 opacity-50 hover:opacity-85"
-                              : "bg-white/80 border-slate-200 opacity-65"
-                          }`}
-                        >
-                          <div>
-                            <div className="flex items-center space-x-2 mb-2">
-                              <span
-                                className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                                  isDarkMode
-                                    ? "text-slate-400 bg-slate-800"
-                                    : "text-slate-450 bg-slate-100"
-                                }`}
-                              >
-                                {task.class?.name || "授業不明"}
-                              </span>
-                            </div>
-                            <h3 className="font-bold text-sm line-through text-slate-400">
-                              {task.title}
-                            </h3>
-                          </div>
-
-                          <div
-                            className={`border-t pt-3 mt-3 flex items-center justify-between ${
-                              isDarkMode
-                                ? "border-slate-800/80"
-                                : "border-slate-100"
-                            }`}
-                          >
-                            <button
-                              onClick={() =>
-                                handleToggleComplete(task.id, task.isCompleted)
-                              }
-                              className={`flex items-center space-x-1 text-xs font-bold px-2.5 py-1.5 rounded-lg transition ${
-                                isDarkMode
-                                  ? "text-slate-350 bg-slate-800 hover:bg-slate-700"
-                                  : "text-slate-600 bg-slate-100 hover:bg-slate-200"
-                              }`}
-                            >
-                              <span>未完了に戻す</span>
-                            </button>
-
-                            <button
-                              onClick={() => handleDeleteTask(task.id)}
-                              className={`p-1 rounded-lg transition ${
-                                isDarkMode
-                                  ? "hover:bg-rose-950/20 text-slate-400 hover:text-rose-400"
-                                  : "hover:bg-rose-50 text-slate-400 hover:text-rose-600"
-                              }`}
-                              title="削除"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </div>
             )}
           </div>
@@ -1579,7 +1649,7 @@ export default function App() {
                   >
                     <div className="flex justify-between items-center">
                       <span
-                        className={`text-[10px] font-black tracking-wider uppercase ${isDarkMode ? "text-indigo-400" : "text-indigo-650"}`}
+                        className={`text-[10px] font-black tracking-wider uppercase ${isDarkMode ? "text-indigo-400" : "text-indigo-655"}`}
                       >
                         {editingClassId !== null
                           ? "● 授業を編集中"
@@ -1593,7 +1663,7 @@ export default function App() {
                             setNewClassName("");
                             setNewClassColor("#3b82f6");
                           }}
-                          className="text-[10px] font-bold text-rose-500 hover:underline"
+                          className="text-[10px] font-bold text-rose-500 hover:underline flex items-center"
                         >
                           編集をキャンセル
                         </button>
@@ -1760,23 +1830,23 @@ export default function App() {
                               className={`p-1 rounded transition ${
                                 isDarkMode
                                   ? "text-slate-450 hover:text-indigo-400 hover:bg-slate-800"
-                                  : "text-slate-400 hover:text-indigo-600 hover:bg-slate-100"
+                                  : "text-slate-400 hover:text-indigo-650 hover:bg-slate-100"
                               }`}
                               title="編集"
                             >
-                              <Edit2 className="w-3 h-3" />
+                              <Edit2 className="w-3.5 h-3" />
                             </button>
                             <button
                               type="button"
                               onClick={() => handleDeleteClass(cls.id)}
                               className={`p-1 rounded transition ${
                                 isDarkMode
-                                  ? "text-slate-450 hover:text-rose-400 hover:bg-slate-800"
-                                  : "text-slate-400 hover:text-rose-600 hover:bg-slate-100"
+                                  ? "text-slate-455 hover:text-rose-400 hover:bg-slate-800"
+                                  : "text-slate-400 hover:text-rose-650 hover:bg-slate-100"
                               }`}
                               title="削除"
                             >
-                              <Trash2 className="w-3 h-3" />
+                              <Trash2 className="w-3.5 h-3" />
                             </button>
                           </div>
                         </div>
@@ -1854,7 +1924,7 @@ export default function App() {
 
                     <div>
                       <label
-                        className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}
+                        className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${isDarkMode ? "text-slate-400" : "text-slate-550"}`}
                       >
                         ひな形の課題タイトル
                       </label>
@@ -1874,7 +1944,7 @@ export default function App() {
 
                     <div>
                       <label
-                        className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}
+                        className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${isDarkMode ? "text-slate-400" : "text-slate-550"}`}
                       >
                         想定される時間 (分)
                       </label>
@@ -1897,7 +1967,7 @@ export default function App() {
 
                     <div>
                       <label
-                        className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}
+                        className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${isDarkMode ? "text-slate-400" : "text-slate-550"}`}
                       >
                         固定メモ (任意)
                       </label>
@@ -1982,7 +2052,7 @@ export default function App() {
                               className={`p-1 rounded transition ${
                                 isDarkMode
                                   ? "text-slate-450 hover:text-rose-400 hover:bg-slate-800"
-                                  : "text-slate-400 hover:text-rose-600 hover:bg-slate-100"
+                                  : "text-slate-400 hover:text-rose-650 hover:bg-slate-100"
                               }`}
                               title="削除"
                             >
@@ -2090,7 +2160,7 @@ export default function App() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label
-                    className={`block text-xs font-bold uppercase tracking-wider mb-1.5 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}
+                    className={`block text-xs font-bold uppercase tracking-wider mb-1.5 ${isDarkMode ? "text-slate-400" : "text-slate-555"}`}
                   >
                     期日
                   </label>
@@ -2114,7 +2184,7 @@ export default function App() {
 
                 <div>
                   <label
-                    className={`block text-xs font-bold uppercase tracking-wider mb-1.5 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}
+                    className={`block text-xs font-bold uppercase tracking-wider mb-1.5 ${isDarkMode ? "text-slate-400" : "text-slate-555"}`}
                   >
                     予想時間 (分)
                   </label>
@@ -2140,7 +2210,7 @@ export default function App() {
 
               <div>
                 <label
-                  className={`block text-xs font-bold uppercase tracking-wider mb-1.5 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}
+                  className={`block text-xs font-bold uppercase tracking-wider mb-1.5 ${isDarkMode ? "text-slate-400" : "text-slate-555"}`}
                 >
                   メモ (任意)
                 </label>
@@ -2174,7 +2244,7 @@ export default function App() {
                 </button>
                 <button
                   type="submit"
-                  className="w-1/2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl text-sm transition shadow-md shadow-indigo-100/10"
+                  className="w-1/2 bg-indigo-650 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl text-sm transition shadow-md shadow-indigo-100/10"
                 >
                   変更を保存
                 </button>
