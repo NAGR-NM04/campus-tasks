@@ -856,7 +856,7 @@ export default function App() {
     <div
       className={`min-h-screen transition-colors duration-300 ${
         isDarkMode
-          ? "bg-slate-955 text-slate-100"
+          ? "bg-slate-950 text-slate-100"
           : "bg-slate-50 text-slate-800"
       } font-sans`}
     >
@@ -870,7 +870,7 @@ export default function App() {
       >
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="bg-indigo-655 text-white p-2.5 rounded-2xl shadow-md">
+            <div className="bg-indigo-600 dark:bg-indigo-500 text-white p-2.5 rounded-2xl shadow-md">
               <BookOpen className="w-5.5 h-5.5" />
             </div>
             <div>
@@ -948,7 +948,7 @@ export default function App() {
           <div className="flex flex-col items-center justify-center py-24 space-y-4">
             <div className="animate-spin rounded-full h-10 w-10 border-4 border-indigo-600 border-t-transparent"></div>
             <p
-              className={`text-sm font-medium ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}
+              className={`text-sm font-medium ${isDarkMode ? "text-slate-400" : "text-slate-550"}`}
             >
               データを読み込んでいます...
             </p>
@@ -1084,47 +1084,43 @@ export default function App() {
                   </button>
                 </div>
 
-                {/* ソートボタン（リスト表示時のみ） */}
+                {/* 🚀 ソートモードセレクトボタン（視覚的に超わかりやすく目立たせる） */}
                 {viewMode === "list" && (
                   <div
-                    className={`flex items-center space-x-2 p-1 rounded-xl shadow-sm border ${
+                    className={`flex items-center space-x-1.5 p-1 rounded-2xl shadow-sm border transition-colors ${
                       isDarkMode
                         ? "bg-slate-900 border-slate-800"
-                        : "bg-white border-slate-200/60 border-transparent"
+                        : "bg-slate-200/50 border-slate-200"
                     }`}
                   >
                     <span
-                      className={`text-xs font-bold px-2 flex items-center gap-1 ${
+                      className={`text-[10px] font-black uppercase px-2 flex items-center gap-1 ${
                         isDarkMode ? "text-slate-400" : "text-slate-500"
                       }`}
                     >
-                      <ArrowUpDown className="w-3 h-3" />
-                      並び替え:
+                      <ArrowUpDown className="w-3.5 h-3.5" />
+                      整列:
                     </span>
                     <button
                       onClick={() => setSortBy("dueDate")}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition duration-200 ${
+                      className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all duration-300 ${
                         sortBy === "dueDate"
-                          ? isDarkMode
-                            ? "bg-slate-800 text-indigo-400"
-                            : "bg-white text-indigo-605 shadow-sm"
+                          ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/20 scale-[1.02]"
                           : isDarkMode
-                            ? "text-slate-400 hover:text-slate-200"
-                            : "text-slate-600 hover:text-slate-900"
+                            ? "text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+                            : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
                       }`}
                     >
                       期日順
                     </button>
                     <button
                       onClick={() => setSortBy("priority")}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition duration-200 ${
+                      className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all duration-300 ${
                         sortBy === "priority"
-                          ? isDarkMode
-                            ? "bg-slate-800 text-indigo-400"
-                            : "bg-white text-indigo-605 shadow-sm"
+                          ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/20 scale-[1.02]"
                           : isDarkMode
-                            ? "text-slate-400 hover:text-slate-200"
-                            : "text-slate-600 hover:text-slate-900"
+                            ? "text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+                            : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
                       }`}
                     >
                       優先度順
@@ -1190,6 +1186,19 @@ export default function App() {
                           task.estimatedTime,
                           task.dueDate,
                         );
+
+                        // 優先度バッジの危険度カラー動的判定
+                        const priorityBadgeClass = task.isCompleted
+                          ? isDarkMode
+                            ? "bg-slate-800 text-slate-500 border-transparent"
+                            : "bg-slate-100 text-slate-400 border-transparent"
+                          : priorityInfo.isOverdue
+                            ? "bg-rose-500/10 text-rose-500 border-rose-500/20"
+                            : priorityInfo.value > 5000
+                              ? "bg-rose-500/15 text-rose-650 dark:text-rose-400 border-rose-500/30 font-black"
+                              : priorityInfo.value > 1500
+                                ? "bg-amber-500/10 text-amber-650 dark:text-amber-400 border-amber-500/20"
+                                : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20";
 
                         return (
                           <div
@@ -1317,35 +1326,65 @@ export default function App() {
                                 </div>
                               </div>
 
-                              {/* 優先度 リアルタイム進捗ゲージ (未完了時のみコンパクト表示) */}
-                              {!task.isCompleted && !priorityInfo.isOverdue ? (
-                                <div className="w-24 sm:w-28 flex flex-col gap-1 shrink-0">
-                                  <div className="flex items-center justify-between text-[10px] text-slate-450 font-bold leading-none">
-                                    <span>優先度スコア</span>
-                                    <span className="font-extrabold text-indigo-400">
+                              {/* 🚀 優先度（目玉機能として数字を大きく目立たせる） */}
+                              <div className="w-24 sm:w-28 flex flex-col gap-1 shrink-0">
+                                <div className="flex items-center justify-between text-[10px] text-slate-450 font-bold leading-none mb-0.5">
+                                  <span>優先度スコア</span>
+                                  {task.isCompleted && (
+                                    <span className="text-[10px] text-slate-500">
+                                      Done
+                                    </span>
+                                  )}
+                                </div>
+
+                                {!task.isCompleted &&
+                                !priorityInfo.isOverdue ? (
+                                  <div className="flex items-baseline gap-1">
+                                    <span
+                                      className={`text-xl font-black tracking-tight leading-none ${
+                                        priorityInfo.value > 5000
+                                          ? "text-rose-600 dark:text-rose-400"
+                                          : priorityInfo.value > 1500
+                                            ? "text-amber-600 dark:text-amber-400"
+                                            : "text-emerald-600 dark:text-emerald-400"
+                                      }`}
+                                    >
                                       {priorityInfo.value}
                                     </span>
                                   </div>
+                                ) : !task.isCompleted &&
+                                  priorityInfo.isOverdue ? (
+                                  <span className="text-sm font-black text-rose-500">
+                                    OVERDUE
+                                  </span>
+                                ) : (
+                                  <span className="text-sm font-bold text-slate-400">
+                                    ---
+                                  </span>
+                                )}
+
+                                <div
+                                  className={`w-full h-1.5 rounded-full overflow-hidden ${isDarkMode ? "bg-slate-800" : "bg-slate-100"}`}
+                                >
                                   <div
-                                    className={`w-full h-1.5 rounded-full overflow-hidden ${isDarkMode ? "bg-slate-800" : "bg-slate-100"}`}
-                                  >
-                                    <div
-                                      className="h-full rounded-full transition-all duration-500"
-                                      style={{
-                                        width: `${priorityInfo.value / 100}%`,
-                                        backgroundColor:
-                                          priorityInfo.value > 5000
-                                            ? "#f43f5e"
-                                            : priorityInfo.value > 1500
-                                              ? "#eab308"
-                                              : "#10b981",
-                                      }}
-                                    />
-                                  </div>
+                                    className="h-full rounded-full transition-all duration-500"
+                                    style={{
+                                      width: task.isCompleted
+                                        ? "100%"
+                                        : `${priorityInfo.value / 100}%`,
+                                      backgroundColor: task.isCompleted
+                                        ? isDarkMode
+                                          ? "#334155"
+                                          : "#cbd5e1"
+                                        : priorityInfo.value > 5000
+                                          ? "#f43f5e"
+                                          : priorityInfo.value > 1500
+                                            ? "#eab308"
+                                            : "#10b981",
+                                    }}
+                                  />
                                 </div>
-                              ) : (
-                                <div className="w-24 sm:w-28 shrink-0 hidden md:block" /> // グリッド間隔をキープ
-                              )}
+                              </div>
 
                               {/* 編集・削除アクション */}
                               <div className="flex items-center gap-1 self-end md:self-auto">
@@ -1514,7 +1553,7 @@ export default function App() {
 
                   <div>
                     <label
-                      className={`block text-xs font-bold uppercase tracking-wider mb-1.5 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}
+                      className={`block text-xs font-bold uppercase tracking-wider mb-1.5 ${isDarkMode ? "text-slate-400" : "text-slate-550"}`}
                     >
                       課題のタイトル
                     </label>
@@ -1535,7 +1574,7 @@ export default function App() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label
-                        className={`block text-xs font-bold uppercase tracking-wider mb-1.5 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}
+                        className={`block text-xs font-bold uppercase tracking-wider mb-1.5 ${isDarkMode ? "text-slate-400" : "text-slate-555"}`}
                       >
                         期日
                       </label>
@@ -1554,7 +1593,7 @@ export default function App() {
 
                     <div>
                       <label
-                        className={`block text-xs font-bold uppercase tracking-wider mb-1.5 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}
+                        className={`block text-xs font-bold uppercase tracking-wider mb-1.5 ${isDarkMode ? "text-slate-400" : "text-slate-555"}`}
                       >
                         予想時間 (分)
                       </label>
@@ -1578,7 +1617,7 @@ export default function App() {
 
                   <div>
                     <label
-                      className={`block text-xs font-bold uppercase tracking-wider mb-1.5 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}
+                      className={`block text-xs font-bold uppercase tracking-wider mb-1.5 ${isDarkMode ? "text-slate-400" : "text-slate-555"}`}
                     >
                       メモ (任意)
                     </label>
@@ -1652,7 +1691,7 @@ export default function App() {
 
                     <div>
                       <label
-                        className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}
+                        className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${isDarkMode ? "text-slate-400" : "text-slate-555"}`}
                       >
                         授業名
                       </label>
@@ -1673,7 +1712,7 @@ export default function App() {
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label
-                          className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}
+                          className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${isDarkMode ? "text-slate-400" : "text-slate-555"}`}
                         >
                           開講年度
                         </label>
@@ -1694,7 +1733,7 @@ export default function App() {
 
                       <div>
                         <label
-                          className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}
+                          className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${isDarkMode ? "text-slate-400" : "text-slate-555"}`}
                         >
                           学期
                         </label>
@@ -1721,7 +1760,7 @@ export default function App() {
 
                     <div>
                       <label
-                        className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}
+                        className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${isDarkMode ? "text-slate-400" : "text-slate-555"}`}
                       >
                         カラー設定
                       </label>
@@ -1759,7 +1798,7 @@ export default function App() {
 
                     <button
                       type="submit"
-                      className="w-full bg-indigo-655 hover:bg-indigo-700 text-white font-bold py-2 rounded-xl text-xs transition shadow-sm"
+                      className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-xl text-xs transition shadow-sm"
                     >
                       {editingClassId !== null
                         ? "変更を保存する"
@@ -1773,7 +1812,7 @@ export default function App() {
                       className={`text-xs font-black border-b pb-1.5 flex items-center gap-1.5 ${
                         isDarkMode
                           ? "text-slate-400 border-slate-800"
-                          : "text-slate-500 border-slate-100"
+                          : "text-slate-550 border-slate-100"
                       }`}
                     >
                       <Settings className="w-3.5 h-3.5" />
@@ -1809,7 +1848,7 @@ export default function App() {
                               onClick={() => startEditClass(cls)}
                               className={`p-1 rounded transition ${
                                 isDarkMode
-                                  ? "text-slate-450 hover:text-indigo-400 hover:bg-slate-800"
+                                  ? "text-slate-455 hover:text-indigo-400 hover:bg-slate-800"
                                   : "text-slate-400 hover:text-indigo-650 hover:bg-slate-100"
                               }`}
                               title="編集"
@@ -1965,7 +2004,7 @@ export default function App() {
 
                     <button
                       type="submit"
-                      className="w-full bg-indigo-655 hover:bg-indigo-700 text-white font-bold py-2 rounded-xl text-xs transition"
+                      className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-xl text-xs transition"
                     >
                       {editingTemplateId !== null
                         ? "変更を保存する"
@@ -1979,7 +2018,7 @@ export default function App() {
                       className={`text-xs font-black border-b pb-1.5 flex items-center gap-1.5 ${
                         isDarkMode
                           ? "text-slate-400 border-slate-800"
-                          : "text-slate-555 border-slate-100"
+                          : "text-slate-500 border-slate-100"
                       }`}
                     >
                       <Copy className="w-3.5 h-3.5" />
@@ -2020,18 +2059,18 @@ export default function App() {
                               className={`p-1 rounded transition ${
                                 isDarkMode
                                   ? "text-slate-455 hover:text-indigo-400 hover:bg-slate-800"
-                                  : "text-slate-400 hover:text-indigo-600 hover:bg-slate-100"
+                                  : "text-slate-400 hover:text-indigo-650 hover:bg-slate-100"
                               }`}
                               title="編集"
                             >
-                              <Edit2 className="w-3.5 h-3" />
+                              <Edit2 className="w-3.5 h-3.5" />
                             </button>
                             <button
                               type="button"
                               onClick={() => handleDeleteTemplate(tmpl.id)}
                               className={`p-1 rounded transition ${
                                 isDarkMode
-                                  ? "text-slate-455 hover:text-rose-450 hover:bg-slate-800"
+                                  ? "text-slate-455 hover:text-rose-400 hover:bg-slate-800"
                                   : "text-slate-400 hover:text-rose-650 hover:bg-slate-100"
                               }`}
                               title="削除"
@@ -2224,7 +2263,7 @@ export default function App() {
                 </button>
                 <button
                   type="submit"
-                  className="w-1/2 bg-indigo-650 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl text-sm transition shadow-md shadow-indigo-100/10"
+                  className="w-1/2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl text-sm transition shadow-md shadow-indigo-100/10"
                 >
                   変更を保存
                 </button>
